@@ -1,0 +1,349 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:path/path.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../config/env.dart';
+import '../models/user.dart';
+import 'package:mime/mime.dart';
+import 'package:http_parser/http_parser.dart';
+import '../models/activity.dart'; // Add this import
+
+class AuthService {
+  Future<bool> signUp({
+    required String matricule,
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String password,
+    required String experience,
+    required String phone,
+    required String nationality,
+    required String fs,
+    required String bio,
+    required String address,
+    required String department,
+    required bool teamLeader,
+    String? imagePath,
+  }) async {
+    try {
+     var request = http.MultipartRequest(
+  'POST',
+  Uri.parse('${Env.apiUrl}/users/signup'),
+);
+
+      request.fields.addAll({
+        'matricule': matricule,
+        'firstName': firstName,
+        'lastName': lastName,
+        'email': email,
+        'password': password,
+        'experience': experience,
+        'phone': phone,
+        'nationality': nationality,
+        'fs': fs,
+        'bio': bio,
+        'address': address,
+        'department': department,
+        'teamLeader': teamLeader.toString(),
+      });
+
+      print("Request fields added: ${request.fields}");
+
+      if (imagePath != null && imagePath.isNotEmpty) {
+        File imageFile = File(imagePath);
+
+        if (!await imageFile.exists()) {
+          print("Image file does not exist at: $imagePath");
+          return false;
+        } else {
+          print("Image file exists and will be uploaded");
+        }
+
+        request.files.add(
+          http.MultipartFile(
+            'image',
+            imageFile.openRead(),
+            imageFile.lengthSync(),
+            filename: basename(imageFile.path),
+            contentType: MediaType.parse(lookupMimeType(imagePath) ?? 'application/octet-stream'),
+          ),
+        );
+      }
+
+      print("Request details:");
+      print("URL: ${request.url}");
+      print("Fields: ${request.fields}");
+      for (var file in request.files) {
+        print("File field: ${file.field}, Filename: ${file.filename}");
+      }
+
+      try {
+        var response = await request.send().timeout(Duration(seconds: 30));
+        print("Request sent. Waiting for response...");
+        var responseBody = await response.stream.bytesToString();
+        print('Response Status: ${response.statusCode}');
+        print('Response Body: $responseBody');
+
+        if (response.statusCode == 200) {
+          print("Signup successful!");
+          return true;
+        } else {
+          print("Signup failed with status code: ${response.statusCode}");
+          print("Response body: $responseBody");
+          return false;
+        }
+      } on TimeoutException {
+        print("Request timed out. Backend might be unresponsive.");
+        return false;
+      }
+    } catch (e) {
+      print('Error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> forgotPassword(String email) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${Env.apiUrl}/users/forgotPassword'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'email': email}),
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        return false;
+      }
+    } catch (e) {
+      print('Error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> validateCode(String email, String code) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${Env.apiUrl}/users/validateCode'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'email': email, 'code': code}),
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        return false;
+      }
+    } catch (e) {
+      print('Error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> changePassword(String id, String email, String password) async {
+    print('Entered changePassword function');
+    try {
+      print('Attempting to change password for email: $email');
+      print('New password: $password');
+      print('ID: $id');
+
+      final response = await http.patch(
+        Uri.parse('${Env.apiUrl}/users/change-psw/$id'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'email': email, 'password': password}),
+      );
+
+      print('Response Status: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
+      if (response.statusCode == 200 && response.body == '"password updated"') {
+        print('Password successfully updated for email: $email');
+        return true;
+      } else {
+        print('Failed to update password: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error: $e');
+      return false;
+    }
+  }
+
+  Future<User?> login(String email, String password) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${Env.apiUrl}/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'email': email,
+          'password': password,
+        }),
+      );
+
+      final responseData = json.decode(response.body);
+      print('Response Status Code: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setString('authToken', responseData['token']);
+        await prefs.setString('userId', responseData['id']);
+        await prefs.setString('userName', responseData['userName'] ?? 'User');
+        await prefs.setString('userImage', responseData['image'] ?? '');
+
+        if (responseData['userName'] != null) {
+          final nameParts = responseData['userName'].split(' ');
+          await prefs.setString('firstName', nameParts.isNotEmpty ? nameParts[0] : 'Unknown');
+          await prefs.setString('lastName', nameParts.length > 1 ? nameParts.sublist(1).join(' ') : 'User');
+        } else {
+          await prefs.setString('firstName', 'Unknown');
+          await prefs.setString('lastName', 'User');
+        }
+
+        await prefs.setString('email', email);
+
+        if (responseData['roles'] != null && responseData['roles'].isNotEmpty) {
+          await prefs.setString('userRole', responseData['roles'][0]);
+        } else {
+          await prefs.setString('userRole', 'Unknown Role');
+        }
+
+        return User.fromJson(responseData);
+      } else if (response.statusCode == 401) {
+        throw Exception('Invalid credentials. Please check your email and password.');
+      } else if (response.statusCode == 403) {
+        throw Exception('Account not yet confirmed. Please wait for email verification.');
+      } else {
+        throw Exception('Login failed: ${responseData['message']}');
+      }
+    } catch (e) {
+      print('Exception during login: $e');
+      throw Exception(e.toString());
+    }
+  }
+
+  Future<bool> checkLoginStatus() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('authToken');
+    if (token != null) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> logout() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('authToken');
+  }
+
+  static Future<Map<String, String>> getCurrentUserInfo() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return {
+      'userName': prefs.getString('userName') ?? 'Unknown User',
+    };
+  }
+
+Future<List<Activity>> fetchActivities() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? userId = prefs.getString('userId');
+    String? token = prefs.getString('authToken');
+    if (userId == null) throw Exception('User not logged in');
+    if (token == null) throw Exception('Not authenticated');
+
+    print('Fetching activities for user: $userId');
+    print('Using token: $token');
+
+    try {
+      final response = await http.get(
+        Uri.parse('${Env.apiUrl}/activities/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      print('Fetch activities response status: ${response.statusCode}');
+      print('Fetch activities response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((json) => Activity.fromJson(json)).toList();
+      } else {
+        throw Exception('Failed to fetch activities: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error fetching activities: $e');
+      rethrow;
+    }}
+
+  Future<void> markActivitiesAsRead() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? userId = prefs.getString('userId');
+    String? token = prefs.getString('authToken');
+    if (userId == null) throw Exception('User not logged in');
+    if (token == null) throw Exception('Not authenticated');
+
+    print('Marking activities as read for user: $userId');
+    print('Using token: $token');
+
+    try {
+      final response = await http.patch(
+        Uri.parse('${Env.apiUrl}/activities/mark-read/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      print('Mark activities response status: ${response.statusCode}');
+      print('Mark activities response body: ${response.body}');
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to mark activities as read: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error marking activities as read: $e');
+      rethrow;
+    }
+  }
+
+Future<Map<String, int>> fetchUnreadCounts() async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  String? userId = prefs.getString('userId');
+  String? token = prefs.getString('authToken');
+  if (userId == null) throw Exception('User not logged in');
+  if (token == null) throw Exception('Not authenticated');
+
+  print('Fetching unread counts for user: $userId');
+  print('Using token: $token');
+
+  try {
+    final response = await http.get(
+      Uri.parse('${Env.apiUrl}/activities/unread-count/$userId'), // Fixed endpoint
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    print('Fetch unread counts response status: ${response.statusCode}');
+    print('Fetch unread counts response body: ${response.body}');
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      print('Unread counts: messages=${data['unreadMessages']}, activities=${data['unreadActivities']}');
+      return {
+        'unreadMessages': data['unreadMessages'] ?? 0,
+        'unreadActivities': data['unreadActivities'] ?? 0,
+      };
+    } else {
+      throw Exception('Failed to fetch unread counts: ${response.statusCode} - ${response.body}');
+    }
+  } catch (e) {
+    print('Error fetching unread counts: $e');
+    rethrow;
+  }
+}
+}
