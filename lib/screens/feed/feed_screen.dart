@@ -9,9 +9,11 @@ import 'package:pte_mobile/screens/messaging/home_messages_screen.dart';
 import 'package:pte_mobile/services/post_service.dart';
 import 'package:pte_mobile/services/auth_service.dart';
 import 'package:pte_mobile/services/user_service.dart';
+import 'package:pte_mobile/widgets/assistant_sidebar.dart';
 import '../../theme/theme.dart';
 import 'package:pte_mobile/screens/feed/user_posts_screen.dart';
 import '../../widgets/assistant_navbar.dart';
+import '../../widgets/lab_manager_navbar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pte_mobile/models/comment.dart';
 import 'package:provider/provider.dart';
@@ -35,6 +37,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
   List<String> _likedPostIds = [];
   bool _isLoading = true;
   int _currentIndex = 0;
+  String? _userRole;
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
 
   @override
@@ -58,6 +61,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
   Future<void> _loadInitialData() async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('userId');
+    setState(() {
+      _userRole = prefs.getString('userRole'); // Fetch role from SharedPreferences
+    });
     if (userId != null) {
       await Provider.of<NotificationProvider>(context, listen: false).fetchActivityCount(userId);
     }
@@ -129,7 +135,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(isLiked ? "Post liked" : "Post unliked"),
-          backgroundColor: Colors.red.withOpacity(0.85),
+          backgroundColor: lightColorScheme.error.withOpacity(0.85),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
@@ -246,70 +252,92 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const SizedBox.shrink(),
-        centerTitle: true,
-        backgroundColor: lightColorScheme.surface,
-        elevation: 0,
-        toolbarHeight: 70,
-        leadingWidth: 120,
-        leading: Center(
-          child: Image.asset('assets/images/prologic.png', width: 180, height: 50, fit: BoxFit.contain),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.chat_bubble_outline, size: 26, color: lightColorScheme.primary),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HomeMessagesScreen())),
-            tooltip: 'Messages',
-          ),
-          Consumer<NotificationProvider>(
-            builder: (context, notificationProvider, child) {
-              return Stack(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.notifications_outlined, size: 26, color: lightColorScheme.primary),
-                    onPressed: _showActivitySheet,
-                    tooltip: 'Notifications',
-                  ),
-                  if (notificationProvider.unreadActivityCount > 0)
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          notificationProvider.unreadActivityCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-          IconButton(
-            icon: Icon(Icons.search, size: 26, color: lightColorScheme.primary),
-            onPressed: () => showSearch(
-              context: context,
-              delegate: UserSearchDelegate(userService: _userService, authService: _authService, theme: Theme.of(context)),
-            ),
-            tooltip: 'Search',
-          ),
-          const SizedBox(width: 8),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: lightColorScheme.primary.withOpacity(0.2)),
+   appBar: AppBar(
+  title: const SizedBox.shrink(),
+  centerTitle: true,
+  backgroundColor: lightColorScheme.surface,
+  elevation: 0,
+  toolbarHeight: 70,
+  leadingWidth: 180,
+  leading: Row(
+    children: [
+      Builder(
+        builder: (context) => IconButton(
+          icon: Icon(Icons.menu, color: lightColorScheme.primary, size: 26),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+          tooltip: 'Menu',
         ),
       ),
+      Flexible(
+        child: Padding(
+          padding: const EdgeInsets.only(left: 4, right: 8),
+          child: Center(
+            child: Image.asset('assets/images/prologic.png', width: 100, height: 50, fit: BoxFit.contain),
+          ),
+        ),
+      ),
+    ],
+  ),
+  actions: [
+    IconButton(
+      icon: Icon(Icons.chat_bubble_outline, size: 26, color: lightColorScheme.primary),
+      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HomeMessagesScreen())),
+      tooltip: 'Messages',
+    ),
+    Consumer<NotificationProvider>(
+      builder: (context, notificationProvider, child) {
+        return Stack(
+          children: [
+            IconButton(
+              icon: Icon(Icons.notifications_outlined, size: 26, color: lightColorScheme.primary),
+              onPressed: _showActivitySheet,
+              tooltip: 'Notifications',
+            ),
+            if (notificationProvider.unreadActivityCount > 0)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: lightColorScheme.error,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    notificationProvider.unreadActivityCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    ),
+    IconButton(
+      icon: Icon(Icons.search, size: 26, color: lightColorScheme.primary),
+      onPressed: () => showSearch(
+        context: context,
+        delegate: UserSearchDelegate(userService: _userService, authService: _authService, theme: Theme.of(context)),
+      ),
+      tooltip: 'Search',
+    ),
+    const SizedBox(width: 8),
+  ],
+  bottom: PreferredSize(
+    preferredSize: const Size.fromHeight(1),
+    child: Container(height: 1, color: lightColorScheme.primary.withOpacity(0.2)),
+  ),
+),
+drawer: AssistantSidebar(
+  currentIndex: 0,
+  onTabChange: (index) {
+    setState(() => _currentIndex = index); // Sync with FeedScreen
+  },
+),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: lightColorScheme.primary))
           : RefreshIndicator(
@@ -349,7 +377,23 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: const Icon(Icons.add_rounded, size: 30, color: Colors.white),
       ),
-      bottomNavigationBar: AssistantNavbar(currentIndex: _currentIndex, onTabChange: _onTabChange),
+      bottomNavigationBar: Consumer<NotificationProvider>(
+        builder: (context, notificationProvider, child) {
+          return _userRole == 'LAB-MANAGER'
+              ? LabManagerNavbar(
+                  currentIndex: _currentIndex,
+                  onTabChange: _onTabChange,
+                  unreadMessageCount: notificationProvider.unreadMessageCount,
+                  unreadNotificationCount: notificationProvider.unreadActivityCount,
+                )
+              : AssistantNavbar(
+                  currentIndex: _currentIndex,
+                  onTabChange: _onTabChange,
+                  unreadMessageCount: notificationProvider.unreadMessageCount,
+                  unreadNotificationCount: notificationProvider.unreadActivityCount,
+                );
+        },
+      ),
     );
   }
 }
@@ -621,7 +665,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
                         scale: _scaleAnimation,
                         child: Icon(
                           widget.isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: widget.isLiked ? Colors.red : lightColorScheme.primary,
+                          color: widget.isLiked ? lightColorScheme.error : lightColorScheme.primary,
                           size: 22,
                         ),
                       ),
@@ -634,7 +678,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
                     Text(
                       '${likes.length}',
                       style: TextStyle(
-                        color: widget.isLiked ? Colors.red : Colors.grey[600],
+                        color: widget.isLiked ? lightColorScheme.error : Colors.grey[600],
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),

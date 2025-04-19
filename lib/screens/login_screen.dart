@@ -7,6 +7,7 @@ import 'package:rflutter_alert/rflutter_alert.dart'; // Import rflutter_alert
 import 'profile_screen.dart'; // Import the ProfileScreen
 import '../services/auth_service.dart'; // Import the AuthService
 import 'forgot_password_screen.dart'; // Import the ForgotPasswordScreen
+import 'package:pte_mobile/screens/feed/feed_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -169,7 +170,7 @@ Future.delayed(Duration(seconds: 2), () {
   } else if (user.roles.contains("ASSISTANT")) {
     Navigator.pushReplacementNamed(context, '/settings');
   } else if (user.roles.contains("LAB-MANAGER")) {
-    Navigator.pushReplacementNamed(context, '/labmanager/home'); // Redirect to HomeLabScreen
+    Navigator.pushReplacementNamed(context, '/feed'); // Redirect to HomeLabScreen
   } else {
     Navigator.pushReplacementNamed(
       context,
@@ -210,7 +211,7 @@ Widget build(BuildContext context) {
                         child: Image.asset(
                           'assets/images/prologic.png',
                           height: 70,
-                        ).animate().fade(duration: 600.ms).scale(),
+                        ).animate().fade(duration: 600.ms),
                       ),
                     ],
                   ),
@@ -288,24 +289,23 @@ Widget build(BuildContext context) {
                           children: [
                             // Login Button (wider and bigger text)
                             Expanded(
-                              child: _isLoading
-                                  ? CircularProgressIndicator(color: Color(0xFF0632A1))
-                                  : ElevatedButton.icon(
-                                      onPressed: _login,
-                                      icon: FaIcon(FontAwesomeIcons.signInAlt, size: 18, color: Colors.white), // Icon color changed to white
-                                      label: Text(
-                                        'Login',
-                                        style: TextStyle(fontSize: 18), // Bigger text
-                                      ),
-                                      style: ElevatedButton.styleFrom(
-                                        foregroundColor: Colors.white, 
-                                        backgroundColor: Color(0xFF0632A1),
-                                        padding: EdgeInsets.symmetric(vertical: 18), // Increased padding
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(12), // Reduced border radius
-                                        ),
-                                      ),
-                                    ).animate().fade(duration: 700.ms).slideX(),
+                              child: ElevatedButton.icon(
+                                onPressed: _isLoading ? null : _login, // Disable button when loading
+                                icon: FaIcon(FontAwesomeIcons.signInAlt, size: 18, color: Colors.white),
+                                label: Text(
+                                  'Login',
+                                  style: TextStyle(fontSize: 18), // Bigger text
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  backgroundColor: Color(0xFF0632A1),
+                                  padding: EdgeInsets.symmetric(vertical: 18), // Increased padding
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12), // Reduced border radius
+                                  ),
+                                  disabledBackgroundColor: Color(0xFF0632A1).withOpacity(0.5), // Greyed-out when disabled
+                                ),
+                              ),
                             ),
                             SizedBox(width: 10),
 
@@ -343,46 +343,28 @@ Widget build(BuildContext context) {
                               style: TextStyle(color: Colors.grey.shade700),
                             ),
                             SizedBox(height: 40), // Reduced space between text and button
-                            // Register Button with Gradient Effect
-                            Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Color(0xFF0632A1),
-                                    Color(0xFF3D6DFF),
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Color(0xFF0632A1).withOpacity(0.5),
-                                    spreadRadius: 2,
-                                    blurRadius: 8,
-                                    offset: Offset(0, 4),
+                            // Register Button with Solid Color
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => SignupScreen(), // Navigate to SignupScreen
                                   ),
-                                ],
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                backgroundColor: Color(0xFF0632A1), // Match Login button color
+                                padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 5, // Add subtle elevation for consistency
                               ),
-                              child: ElevatedButton(
-                                onPressed: () {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => SignupScreen(), // Navigate to SignupScreen
-    ),
-  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  foregroundColor: Colors.white, 
-                                  backgroundColor: Colors.transparent, // Make button background transparent
-                                  padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  elevation: 0, // Remove default elevation
-                                ),
-                                child: Text('Register'),
+                              child: Text(
+                                'Register',
+                                style: TextStyle(fontSize: 16),
                               ),
                             ).animate().fade(duration: 900.ms),
                           ],

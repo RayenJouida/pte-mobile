@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:pte_mobile/models/post.dart';
 import 'package:pte_mobile/models/comment.dart';
 import 'package:pte_mobile/services/post_service.dart';
-import '../../theme/theme.dart'; // Assuming this is where lightColorScheme is defined
+import '../../theme/theme.dart';
+import '../../config/env.dart'; 
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -72,9 +73,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const String imageBaseUrl = "http://192.168.1.110:3001/postImages/";
-    const String userImageBaseUrl = "http://192.168.1.110:3001/images/";
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: lightColorScheme.surface,
@@ -127,7 +125,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ? PageView.builder(
                           itemCount: post.images.length,
                           itemBuilder: (_, index) => Image.network(
-                            '$imageBaseUrl${post.images[index]}',
+                            '${Env.imageBaseUrl}${post.images[index]}',
                             fit: BoxFit.cover,
                             loadingBuilder: (context, child, loadingProgress) {
                               if (loadingProgress == null) return child;
@@ -173,7 +171,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               radius: 22,
                               backgroundImage: NetworkImage(
                                 post.user.image != null
-                                    ? '$userImageBaseUrl${post.user.image}'
+                                    ? '${Env.userImageBaseUrl}${post.user.image}'
                                     : 'https://ui-avatars.com/api/?name=${post.user.firstName}+${post.user.lastName}',
                               ),
                             ),
@@ -258,7 +256,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         radius: 18,
                                         backgroundImage: NetworkImage(
                                           comment.user.image != null
-                                              ? '$userImageBaseUrl${comment.user.image}'
+                                              ? '${Env.userImageBaseUrl}${comment.user.image}'
                                               : 'https://ui-avatars.com/api/?name=${comment.user.firstName}+${comment.user.lastName}',
                                         ),
                                       ),

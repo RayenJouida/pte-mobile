@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../services/virtualization_env_service.dart';
-import '../../models/virtualization_env.dart';
-import 'requester_info.dart';
+import 'package:pte_mobile/screens/labmanager/requester_info.dart';
+import 'package:quickalert/quickalert.dart';
+import 'package:pte_mobile/models/virtualization_env.dart';
+import 'package:pte_mobile/services/virtualization_env_service.dart';
+import 'package:pte_mobile/theme/theme.dart';
+import 'package:pte_mobile/widgets/lab_manager_navbar.dart';
+import 'package:provider/provider.dart';
+import 'package:pte_mobile/providers/notification_provider.dart';
 
 class LabRequestsScreen extends StatefulWidget {
   const LabRequestsScreen({Key? key}) : super(key: key);
@@ -15,13 +21,12 @@ class _LabRequestsScreenState extends State<LabRequestsScreen> {
   List<VirtualizationEnv> _labRequests = [];
   bool _isLoading = true;
   String _searchQuery = '';
-
-  // Filtering, sorting, and pagination state
   String _selectedStatusFilter = 'All';
   String _selectedRoleFilter = 'All';
   bool _sortAlphabetically = false;
   int _currentPage = 0;
-  final int _itemsPerPage = 4;
+  final int _itemsPerPage = 6;
+  int _currentIndex = 1;
 
   @override
   void initState() {
@@ -31,18 +36,19 @@ class _LabRequestsScreenState extends State<LabRequestsScreen> {
 
   Future<void> _fetchLabRequests() async {
     try {
-      final requests =
-          await VirtualizationEnvService().getAllVirtualizationEnvs();
+      final requests = await VirtualizationEnvService().getAllVirtualizationEnvs();
       setState(() {
         _labRequests = requests;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load lab requests: $e')),
+      setState(() => _isLoading = false);
+      QuickAlert.show(
+        context: context,
+        type: QuickAlertType.error,
+        title: 'Error',
+        text: 'Failed to load lab requests: $e',
+        confirmBtnColor: lightColorScheme.primary,
       );
     }
   }
@@ -52,7 +58,7 @@ class _LabRequestsScreenState extends State<LabRequestsScreen> {
       case 'active':
         return Colors.green;
       case 'declined':
-        return Colors.red;
+        return lightColorScheme.error;
       case 'pending':
         return Colors.orange;
       default:
@@ -63,27 +69,27 @@ class _LabRequestsScreenState extends State<LabRequestsScreen> {
   List<String> getRoleOptions() {
     var roles = _labRequests.map((e) => e.type).toSet().toList();
     roles.sort();
-    return roles;
+    return ['All', ...roles];
+  }
+
+  void _onTabChange(int index) {
+    if (index != _currentIndex) setState(() => _currentIndex = index);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Apply search, status, and role filters.
     List<VirtualizationEnv> filteredRequests = _labRequests.where((request) {
       final query = _searchQuery.toLowerCase();
       bool matchesSearch = request.firstName.toLowerCase().contains(query) ||
           request.lastName.toLowerCase().contains(query) ||
           request.type.toLowerCase().contains(query);
       bool matchesStatus = _selectedStatusFilter == 'All' ||
-          request.status.toLowerCase() ==
-              _selectedStatusFilter.toLowerCase();
+          request.status.toLowerCase() == _selectedStatusFilter.toLowerCase();
       bool matchesRole = _selectedRoleFilter == 'All' ||
-          request.type.toLowerCase() ==
-              _selectedRoleFilter.toLowerCase();
+          request.type.toLowerCase() == _selectedRoleFilter.toLowerCase();
       return matchesSearch && matchesStatus && matchesRole;
     }).toList();
 
-    // Sort alphabetically if enabled.
     if (_sortAlphabetically) {
       filteredRequests.sort((a, b) {
         final nameA = "${a.firstName} ${a.lastName}";
@@ -92,7 +98,6 @@ class _LabRequestsScreenState extends State<LabRequestsScreen> {
       });
     }
 
-    // Pagination logic
     int totalPages = (filteredRequests.length / _itemsPerPage).ceil();
     if (totalPages > 0 && _currentPage >= totalPages) {
       _currentPage = totalPages - 1;
@@ -102,52 +107,131 @@ class _LabRequestsScreenState extends State<LabRequestsScreen> {
         filteredRequests.skip(startIndex).take(_itemsPerPage).toList();
 
     return Scaffold(
-      // Note: The Floating Action Button has been removed.
-      body: SafeArea(
-        // Increase the top padding to push the content down further.
-        minimum: const EdgeInsets.only(top: 40.0),
-        child: Column(
-          children: [
-            // Extra spacer at the top.
-            const SizedBox(height: 20),
-            _buildSearchBar(),
-            _buildFiltersRow(),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : filteredRequests.isEmpty
-                      ? _buildEmptyState()
-                      : _buildRequestList(pagedRequests),
+      backgroundColor: lightColorScheme.surfaceVariant,
+      body: Column(
+        children: [
+          // Header Section
+          Container(
+            padding: const EdgeInsets.only(top: 40, bottom: 20),
+            decoration: BoxDecoration(
+              color: lightColorScheme.primary,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
-            if (filteredRequests.isNotEmpty)
-              _buildPaginationControls(totalPages),
-            // Extra space at the bottom for visual breathing room.
-            const SizedBox(height: 20),
-          ],
-        ),
+            child: Column(
+              children: [
+                Text(
+                  'Lab Requests',
+                  style: GoogleFonts.poppins(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: lightColorScheme.onPrimary,
+                  ),
+                ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                const SizedBox(height: 16),
+                _buildSearchBar().animate().fadeIn(duration: 500.ms).slideY(delay: 300.ms),
+              ],
+            ),
+          ),
+          
+          // Filters Section
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12),
+            child: _buildFiltersRow().animate().fadeIn(duration: 500.ms).slideY(delay: 400.ms),
+          ),
+          
+          // Main Content
+          Expanded(
+            child: _isLoading
+                ? Center(
+                    child: CircularProgressIndicator(
+                      color: lightColorScheme.primary,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : filteredRequests.isEmpty
+                    ? _buildEmptyState()
+                    : RefreshIndicator(
+                        color: lightColorScheme.primary,
+                        onRefresh: _fetchLabRequests,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: pagedRequests.length,
+                          separatorBuilder: (context, index) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            return _buildLabRequestCard(pagedRequests[index])
+                                .animate()
+                                .fadeIn(duration: 300.ms, delay: (50 * index).ms)
+                                .slideY(begin: 0.1, end: 0, delay: (50 * index).ms);
+                          },
+                        ),
+                      ),
+          ),
+          
+          // Pagination Controls
+          if (filteredRequests.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: _buildPaginationControls(totalPages)
+                  .animate()
+                  .fadeIn(duration: 500.ms)
+                  .slideY(delay: 500.ms),
+            ),
+        ],
+      ),
+      bottomNavigationBar: Consumer<NotificationProvider>(
+        builder: (context, notificationProvider, child) {
+          return LabManagerNavbar(
+            currentIndex: _currentIndex,
+            onTabChange: _onTabChange,
+            unreadMessageCount: notificationProvider.unreadMessageCount,
+            unreadNotificationCount: notificationProvider.unreadActivityCount,
+          );
+        },
       ),
     );
   }
 
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
-      child: TextField(
-        onChanged: (value) {
-          setState(() {
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: lightColorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          onChanged: (value) => setState(() {
             _searchQuery = value;
-            _currentPage = 0; // Reset pagination on new search.
-          });
-        },
-        decoration: InputDecoration(
-          filled: true,
-          fillColor: Colors.grey[200],
-          prefixIcon: const Icon(Icons.search),
-          hintText: 'Search by name or type...',
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
+            _currentPage = 0;
+          }),
+          decoration: InputDecoration(
+            hintText: 'Search requests...',
+            hintStyle: GoogleFonts.poppins(
+              color: lightColorScheme.onSurface.withOpacity(0.5),
+            ),
+            prefixIcon: Icon(Icons.search, color: lightColorScheme.primary),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
+          style: GoogleFonts.poppins(color: lightColorScheme.onSurface),
         ),
       ),
     );
@@ -155,58 +239,90 @@ class _LabRequestsScreenState extends State<LabRequestsScreen> {
 
   Widget _buildFiltersRow() {
     List<String> roleOptions = getRoleOptions();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Status Filter Dropdown
-          DropdownButton<String>(
+    return Row(
+      children: [
+        // Status Filter
+        Expanded(
+          child: _buildFilterDropdown(
             value: _selectedStatusFilter,
-            items: ['All', 'Active', 'Declined', 'Pending']
-                .map((status) => DropdownMenuItem<String>(
-                      value: status,
-                      child: Text("Status: $status"),
-                    ))
-                .toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedStatusFilter = value!;
-                _currentPage = 0;
-              });
-            },
+            items: ['All', 'Active', 'Pending', 'Declined'],
+            label: 'Status',
+            onChanged: (value) => setState(() {
+              _selectedStatusFilter = value!;
+              _currentPage = 0;
+            }),
           ),
-          // Role Filter Dropdown (using "type" as role)
-          DropdownButton<String>(
+        ),
+        const SizedBox(width: 8),
+        
+        // Role Filter
+        Expanded(
+          child: _buildFilterDropdown(
             value: _selectedRoleFilter,
-            items: ['All', ...roleOptions]
-                .map((role) => DropdownMenuItem<String>(
-                      value: role,
-                      child: Text("Role: $role"),
-                    ))
-                .toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedRoleFilter = value!;
-                _currentPage = 0;
-              });
-            },
+            items: roleOptions,
+            label: 'Type',
+            onChanged: (value) => setState(() {
+              _selectedRoleFilter = value!;
+              _currentPage = 0;
+            }),
           ),
-          // Sort toggle for A–Z
-          IconButton(
+        ),
+        const SizedBox(width: 8),
+        
+        // Sort Button
+        Container(
+          decoration: BoxDecoration(
+            color: _sortAlphabetically 
+                ? lightColorScheme.primary.withOpacity(0.2)
+                : lightColorScheme.surface,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: IconButton(
             icon: Icon(
-              _sortAlphabetically ? Icons.sort_by_alpha : Icons.sort,
-              color: _sortAlphabetically ? Colors.blueAccent : Colors.grey,
+              Icons.sort_by_alpha,
+              color: _sortAlphabetically 
+                  ? lightColorScheme.primary 
+                  : lightColorScheme.onSurface.withOpacity(0.6),
             ),
-            tooltip: "Sort Alphabetically",
-            onPressed: () {
-              setState(() {
-                _sortAlphabetically = !_sortAlphabetically;
-                _currentPage = 0;
-              });
-            },
+            onPressed: () => setState(() {
+              _sortAlphabetically = !_sortAlphabetically;
+              _currentPage = 0;
+            }),
+            tooltip: "Sort alphabetically",
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilterDropdown({
+    required String value,
+    required List<String> items,
+    required String label,
+    required Function(String?) onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: lightColorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: DropdownButton<String>(
+        value: value,
+        isExpanded: true,
+        underline: const SizedBox(),
+        dropdownColor: lightColorScheme.surface,
+        style: GoogleFonts.poppins(
+          color: lightColorScheme.onSurface,
+          fontSize: 14,
+        ),
+        items: items.map((item) {
+          return DropdownMenuItem<String>(
+            value: item,
+            child: Text('$label: $item'),
+          );
+        }).toList(),
+        onChanged: onChanged,
       ),
     );
   }
@@ -215,118 +331,185 @@ class _LabRequestsScreenState extends State<LabRequestsScreen> {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
-          Icon(Icons.inbox, size: 80, color: Colors.grey),
-          SizedBox(height: 20),
+        children: [
+          Icon(
+            Icons.inbox_outlined,
+            size: 64,
+            color: lightColorScheme.primary.withOpacity(0.4),
+          ),
+          const SizedBox(height: 16),
           Text(
-            'No lab requests found.',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+            'No requests found',
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: lightColorScheme.onSurface.withOpacity(0.7),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Try adjusting your filters or search',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: lightColorScheme.onSurface.withOpacity(0.5),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _fetchLabRequests,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: lightColorScheme.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: Text(
+              'Refresh',
+              style: GoogleFonts.poppins(
+                color: lightColorScheme.onPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildRequestList(List<VirtualizationEnv> requests) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      physics: const BouncingScrollPhysics(),
-      itemCount: requests.length,
-      itemBuilder: (context, index) {
-        final request = requests[index];
-        return _buildLabRequestCard(request);
-      },
-    );
-  }
-
   Widget _buildLabRequestCard(VirtualizationEnv request) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      elevation: 4,
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
-        leading: CircleAvatar(
-          backgroundColor: _getStatusColor(request.status).withOpacity(0.2),
-          child: Icon(Icons.person, color: _getStatusColor(request.status)),
-        ),
-        title: Text(
-          '${request.firstName} ${request.lastName}',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            fontSize: 16,
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => RequesterInfoScreen(request: request),
           ),
-        ),
-        subtitle: Text(
-          'Lab Type: ${request.type}',
-          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[700]),
-        ),
-        trailing: Chip(
-          label: Text(request.status,
-              style: const TextStyle(color: Colors.white)),
-          backgroundColor: _getStatusColor(request.status),
-        ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => RequesterInfoScreen(request: request),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: lightColorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
-          );
-        },
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            // Status Indicator
+            Container(
+              width: 8,
+              height: 60,
+              decoration: BoxDecoration(
+                color: _getStatusColor(request.status),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(width: 16),
+            
+            // User Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${request.firstName} ${request.lastName}',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      color: lightColorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    request.type,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: lightColorScheme.onSurface.withOpacity(0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Status Chip
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _getStatusColor(request.status).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _getStatusColor(request.status).withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                request.status,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: _getStatusColor(request.status),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildPaginationControls(int totalPages) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // "Previous" button.
-          ElevatedButton(
-            onPressed: _currentPage > 0
-                ? () {
-                    setState(() {
-                      _currentPage--;
-                    });
-                  }
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // Previous Button
+        IconButton(
+          onPressed: _currentPage > 0
+              ? () => setState(() => _currentPage--)
+              : null,
+          icon: Icon(Icons.chevron_left),
+          color: _currentPage > 0
+              ? lightColorScheme.primary
+              : lightColorScheme.onSurface.withOpacity(0.3),
+          splashRadius: 20,
+        ),
+        
+        // Page Indicator
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: lightColorScheme.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            '${_currentPage + 1} / $totalPages',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: lightColorScheme.primary,
             ),
-            child: const Text("Previous"),
           ),
-          const SizedBox(width: 20),
-          // Page indicator.
-          Text(
-            "Page ${_currentPage + 1} of $totalPages",
-            style: GoogleFonts.poppins(fontSize: 16),
-          ),
-          const SizedBox(width: 20),
-          // "Next" button.
-          ElevatedButton(
-            onPressed: _currentPage < totalPages - 1
-                ? () {
-                    setState(() {
-                      _currentPage++;
-                    });
-                  }
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text("Next"),
-          ),
-        ],
-      ),
+        ),
+        
+        // Next Button
+        IconButton(
+          onPressed: _currentPage < totalPages - 1
+              ? () => setState(() => _currentPage++)
+              : null,
+          icon: Icon(Icons.chevron_right),
+          color: _currentPage < totalPages - 1
+              ? lightColorScheme.primary
+              : lightColorScheme.onSurface.withOpacity(0.3),
+          splashRadius: 20,
+        ),
+      ],
     );
   }
 }

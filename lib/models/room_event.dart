@@ -1,11 +1,13 @@
 class RoomEvent {
-  final String? id; // Optional, as the backend generates it
+  final String? id;
   final String title;
   final DateTime start;
   final DateTime end;
-  final String roomId; // Use roomId instead of room object for simplicity
-  final String applicantId; // Use applicantId instead of applicant object for simplicity
+  final String roomId;
+  final String applicantId;
   final bool isAccepted;
+  final String? roomLabel;
+  final String? applicantName;
 
   RoomEvent({
     this.id,
@@ -14,29 +16,37 @@ class RoomEvent {
     required this.end,
     required this.roomId,
     required this.applicantId,
-    this.isAccepted = true, // Default value is true
+    this.isAccepted = true,
+    this.roomLabel,
+    this.applicantName,
   });
 
-  // Convert from JSON
   factory RoomEvent.fromJson(Map<String, dynamic> json) {
+    final roomData = json['room'] is String
+        ? {'_id': json['room']}
+        : json['room'] as Map<String, dynamic>? ?? {'_id': json['room']};
+    final applicantData = json['applicant'] is String
+        ? {'_id': json['applicant']}
+        : json['applicant'] as Map<String, dynamic>? ?? {'_id': json['applicant']};
+
     return RoomEvent(
-      id: json['_id'] as String?, // Extract the event ID
+      id: json['_id'] as String?,
       title: json['title'] as String,
-      start: DateTime.parse(json['start']), // Parse ISO 8601 string to DateTime
-      end: DateTime.parse(json['end']), // Parse ISO 8601 string to DateTime
-      roomId: json['room'] is String
-          ? json['room'] as String // Flat structure (for create event response)
-          : json['room']['_id'] as String, // Nested structure (for fetch events response)
-      applicantId: json['applicant'] is String
-          ? json['applicant'] as String // Flat structure (for create event response)
-          : json['applicant']['_id'] as String, // Nested structure (for fetch events response)
-      isAccepted: json['isAccepted'] ?? true, // Default to true if not provided
+      start: DateTime.parse(json['start']),
+      end: DateTime.parse(json['end']),
+      roomId: roomData['_id'] as String,
+      applicantId: applicantData['_id'] as String,
+      isAccepted: json['isAccepted'] ?? true,
+      roomLabel: roomData['label'] as String? ?? null,
+      applicantName: applicantData['firstName'] != null && applicantData['lastName'] != null
+          ? '${applicantData['firstName']} ${applicantData['lastName']}'
+          : null,
     );
   }
 
-  // Convert to JSON
   Map<String, dynamic> toJson() {
     return {
+      if (id != null) '_id': id,
       'title': title,
       'start': start.toIso8601String(),
       'end': end.toIso8601String(),

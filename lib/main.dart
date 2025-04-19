@@ -5,7 +5,6 @@ import 'package:pte_mobile/screens/schedule_screen.dart';
 import 'package:pte_mobile/screens/settings_screen.dart';
 import 'package:pte_mobile/screens/signup_screen.dart';
 import 'package:pte_mobile/screens/login_screen.dart';
-import 'package:pte_mobile/screens/home_screen.dart';
 import 'package:pte_mobile/screens/admin_screen.dart';
 import 'package:pte_mobile/screens/profile_screen.dart';
 import 'package:pte_mobile/screens/validate_code_screen.dart';
@@ -16,7 +15,6 @@ import 'package:pte_mobile/providers/theme_provider.dart';
 import 'package:pte_mobile/providers/notification_provider.dart';
 import 'package:pte_mobile/theme/theme.dart';
 import 'package:pte_mobile/screens/admin/users_screen.dart';
-import 'package:pte_mobile/screens/labmanager/home_lab.dart';
 
 void main() {
   runApp(
@@ -43,16 +41,14 @@ class MyApp extends StatelessWidget {
       darkTheme: darkMode,
       themeMode: themeProvider.themeMode,
       routes: {
-        '/': (context) => HomeScreen(),
+        '/': (context) => LoginScreen(),
         '/login': (context) => LoginScreen(),
         '/signup': (context) => SignupScreen(),
         '/admin': (context) => AdminScreen(),
         '/users': (context) => UsersScreen(),
-        '/home': (context) => HomeScreen(),
         '/schedule': (context) => ScheduleScreen(),
         '/settings': (context) => SettingsScreen(),
         '/profile': (context) => ProfileScreen(),
-        '/labmanager/home': (context) => HomeLabScreen(),
         '/validate-code': (context) => ValidateCodeScreen(),
         '/change-password': (context) => ChangePasswordScreen(),
         '/chat': (context) => ChatScreen(),
