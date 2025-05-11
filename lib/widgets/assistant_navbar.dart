@@ -3,9 +3,8 @@ import 'package:google_nav_bar/google_nav_bar.dart';
 import 'package:line_icons/line_icons.dart';
 import 'package:pte_mobile/screens/feed/feed_screen.dart';
 import 'package:pte_mobile/screens/messaging/home_messages_screen.dart';
-import '../screens/vehicules/home_vehic_screen.dart';
-import '../screens/settings_screen.dart';
-import '../screens/room/home_room_screen.dart';
+import 'package:pte_mobile/screens/settings_screen.dart';
+import 'package:pte_mobile/screens/profile_screen.dart';
 
 class AssistantNavbar extends StatelessWidget {
   final int currentIndex;
@@ -29,25 +28,13 @@ class AssistantNavbar extends StatelessWidget {
       case 1:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => HomeVehicScreen()),
+          MaterialPageRoute(builder: (context) => HomeMessagesScreen()),
         );
         break;
       case 2:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => HomeRoomScreen()),
-        );
-        break;
-      case 3:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => HomeMessagesScreen()),
-        );
-        break;
-      case 4:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => SettingsScreen()),
+          MaterialPageRoute(builder: (context) => ProfileScreen()),
         );
         break;
     }
@@ -88,6 +75,7 @@ class AssistantNavbar extends StatelessWidget {
           iconSize: 25,
           tabBackgroundColor: colorScheme.primary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          // Removed the Settings tab from the navigation bar
           tabs: [
             GButton(
               icon: LineIcons.home,
@@ -123,8 +111,6 @@ class AssistantNavbar extends StatelessWidget {
                 ],
               ),
             ),
-            const GButton(icon: LineIcons.car, text: 'Vehicle'),
-            const GButton(icon: LineIcons.building, text: 'Room'),
             GButton(
               icon: LineIcons.comment,
               text: 'Chat',
@@ -159,7 +145,7 @@ class AssistantNavbar extends StatelessWidget {
                 ],
               ),
             ),
-            const GButton(icon: LineIcons.cog, text: 'Settings'),
+            const GButton(icon: LineIcons.user, text: 'Profile'),
           ],
           selectedIndex: currentIndex,
           onTabChange: (index) => _navigateToPage(context, index),

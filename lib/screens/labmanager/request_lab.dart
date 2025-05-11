@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,6 +29,8 @@ class _RequestLabScreenState extends State<RequestLabScreen> {
   double _ramValue = 1;
   double _diskValue = 1;
   int _currentStep = 0;
+  String? _selectedLabType; // For single-selection radio buttons
+  double _processorCores = 1; // Slider for processor cores (1 to 32)
 
   @override
   void initState() {
@@ -90,10 +91,10 @@ class _RequestLabScreenState extends State<RequestLabScreen> {
             _departementController.text.isNotEmpty &&
             RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(_emailController.text);
       case 1:
-        return _typeController.text.isNotEmpty &&
+        return _selectedLabType != null && // Ensure a lab type is selected
             _ramValue >= 1 &&
             _diskValue >= 1 &&
-            _processorController.text.isNotEmpty;
+            _processorCores >= 1;
       case 2:
         return _startDate != null && 
                _endDate != null && 
@@ -120,91 +121,95 @@ class _RequestLabScreenState extends State<RequestLabScreen> {
     );
   }
 
-Future<void> _submitRequest() async {
-  if (!_isStepValid(2)) {
-    _showValidationError();
-    return;
+  Future<void> _submitRequest() async {
+    if (!_isStepValid(2)) {
+      _showValidationError();
+      return;
+    }
+
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? userId = prefs.getString('userId');
+    String? email = prefs.getString('email') ?? 'meher@gmail.com';
+
+    // Set _typeController based on radio selection
+    _typeController.text = _selectedLabType ?? '';
+
+    QuickAlert.show(
+      context: context,
+      type: QuickAlertType.confirm,
+      title: 'Confirm Submission',
+      text: 'Do you want to submit this lab request?',
+      confirmBtnText: 'Yes',
+      cancelBtnText: 'No',
+        confirmBtnColor: const Color(0xFF2FCCBA), // Matches QuickAlert confirm color
+      onConfirmBtnTap: () async {
+        Navigator.pop(context); // Close confirm dialog
+
+        try {
+          final Map<String, dynamic> requestData = {
+            'firstName': _firstNameController.text,
+            'lastName': _lastNameController.text,
+            'email': email,
+            'departement': _departementController.text,
+            'type': _typeController.text,
+            'backup': _backup,
+            'ram': _ramValue.toInt().toString(), // Backend expects String
+            'disk': _diskValue.toInt().toString(), // Backend expects String
+            'processor': _processorCores.toInt().toString(), // Use slider value
+            'dhcp': _dhcp,
+            'start': _startDate?.toIso8601String(),
+            'end': _endDate?.toIso8601String(),
+            'goals': _goalsController.text,
+            'applicant': userId, // Ensure this is sent
+          };
+
+          print('===== SUBMITTING REQUEST =====');
+          print('User ID: $userId');
+          print('Email: $email');
+          print('Request data: ${jsonEncode(requestData)}');
+
+          final response = await VirtualizationEnvService().addVirtualizationEnv(requestData);
+          print('Response received: ${jsonEncode(response.toJson())}');
+
+          QuickAlert.show(
+            context: context,
+            type: QuickAlertType.success,
+            title: 'Success!',
+            text: "Your request has been submitted. You'll be emailed once it's treated.",
+            confirmBtnColor: const Color(0xFF0632A1),
+            onConfirmBtnTap: () {
+              Navigator.pop(context);
+              _formKey.currentState?.reset();
+              setState(() {
+                _backup = false;
+                _dhcp = false;
+                _startDate = null;
+                _endDate = null;
+                _ramValue = 1;
+                _diskValue = 1;
+                _selectedLabType = null; // Reset radio selection
+                _typeController.clear();
+                _processorCores = 1; // Reset to minimum cores
+                _goalsController.clear();
+                _currentStep = 0;
+              });
+            },
+          );
+        } catch (e) {
+          print('===== ERROR IN SUBMIT REQUEST =====');
+          print('Full error: $e');
+
+          QuickAlert.show(
+            context: context,
+            type: QuickAlertType.error,
+            title: 'Error',
+            text: 'Failed to submit request: $e',
+            confirmBtnColor: const Color(0xFF0632A1),
+          );
+        }
+      },
+    );
   }
-
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  String? userId = prefs.getString('userId');
-  String? email = prefs.getString('email') ?? 'meher@gmail.com';
-
-  QuickAlert.show(
-    context: context,
-    type: QuickAlertType.confirm,
-    title: 'Confirm Submission',
-    text: 'Do you want to submit this lab request?',
-    confirmBtnText: 'Yes',
-    cancelBtnText: 'No',
-    confirmBtnColor: const Color(0xFF0632A1),
-    onConfirmBtnTap: () async {
-      Navigator.pop(context); // Close confirm dialog
-
-      try {
-        final Map<String, dynamic> requestData = {
-          'firstName': _firstNameController.text,
-          'lastName': _lastNameController.text,
-          'email': email,
-          'departement': _departementController.text,
-          'type': _typeController.text,
-          'backup': _backup,
-          'ram': _ramValue.toInt().toString(), // Backend expects String
-          'disk': _diskValue.toInt().toString(), // Backend expects String
-          'processor': _processorController.text,
-          'dhcp': _dhcp,
-          'start': _startDate?.toIso8601String(),
-          'end': _endDate?.toIso8601String(),
-          'goals': _goalsController.text,
-          'applicant': userId, // Ensure this is sent
-        };
-
-        print('===== SUBMITTING REQUEST =====');
-        print('User ID: $userId');
-        print('Email: $email');
-        print('Request data: ${jsonEncode(requestData)}');
-
-        final response = await VirtualizationEnvService().addVirtualizationEnv(requestData);
-        print('Response received: ${jsonEncode(response.toJson())}'); // Fixed: Use jsonEncode
-
-        QuickAlert.show(
-          context: context,
-          type: QuickAlertType.success,
-          title: 'Success!',
-          text: "Your request has been submitted. You'll be emailed once it's treated.",
-          confirmBtnColor: const Color(0xFF0632A1),
-          onConfirmBtnTap: () {
-            Navigator.pop(context);
-            _formKey.currentState?.reset();
-            setState(() {
-              _backup = false;
-              _dhcp = false;
-              _startDate = null;
-              _endDate = null;
-              _ramValue = 1;
-              _diskValue = 1;
-              _typeController.clear();
-              _processorController.clear();
-              _goalsController.clear();
-              _currentStep = 0;
-            });
-          },
-        );
-      } catch (e) {
-        print('===== ERROR IN SUBMIT REQUEST =====');
-        print('Full error: $e');
-
-        QuickAlert.show(
-          context: context,
-          type: QuickAlertType.error,
-          title: 'Error',
-          text: 'Failed to submit request: $e',
-          confirmBtnColor: const Color(0xFF0632A1),
-        );
-      }
-    },
-  );
-}
 
   @override
   Widget build(BuildContext context) {
@@ -222,15 +227,31 @@ Future<void> _submitRequest() async {
                 bottomRight: Radius.circular(30),
               ),
             ),
-            child: Center(
-              child: Text(
-                'Request a Lab',
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+            child: Stack(
+              children: [
+                Center(
+                  child: Text(
+                    'Request a Lab',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
                 ),
-              ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                Positioned(
+                  left: 16,
+                  top: MediaQuery.of(context).padding.top + 16,
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -324,24 +345,41 @@ Future<void> _submitRequest() async {
                     // Step 1: Lab Details
                     if (_currentStep == 1) ...[
                       _buildCard(
-                        isValid: _typeController.text.isNotEmpty,
-                        child: DropdownButtonFormField<String>(
-                          value: _typeController.text.isEmpty ? null : _typeController.text,
-                          dropdownColor: Colors.white,
-                          style: const TextStyle(color: Colors.black),
-                          decoration: const InputDecoration(
-                            labelText: 'Lab Type',
-                            labelStyle: TextStyle(color: Colors.grey),
-                            prefixIcon: Icon(Icons.arrow_drop_down, color: Color(0xFF0632A1)),
-                            border: InputBorder.none,
-                          ),
-                          items: ['VM', 'Container', 'Serverless']
-                              .map((type) => DropdownMenuItem<String>(
-                                    value: type,
-                                    child: Text(type),
-                                  ))
-                              .toList(),
-                          onChanged: (value) => setState(() => _typeController.text = value ?? ''),
+                        isValid: _selectedLabType != null,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Lab Type',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            RadioListTile<String>(
+                              value: 'Hyper-V',
+                              groupValue: _selectedLabType,
+                              onChanged: (value) => setState(() => _selectedLabType = value),
+                              title: const Text(
+                                'Hyper-V',
+                                style: TextStyle(color: Colors.black, fontSize: 16),
+                              ),
+                              activeColor: const Color(0xFF0632A1),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            RadioListTile<String>(
+                              value: 'VMWare',
+                              groupValue: _selectedLabType,
+                              onChanged: (value) => setState(() => _selectedLabType = value),
+                              title: const Text(
+                                'VMWare',
+                                style: TextStyle(color: Colors.black, fontSize: 16),
+                              ),
+                              activeColor: const Color(0xFF0632A1),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                          ],
                         ),
                       ).animate().fadeIn(duration: 500.ms).slideY(delay: 300.ms),
                       const SizedBox(height: 16),
@@ -382,7 +420,7 @@ Future<void> _submitRequest() async {
                               min: 1,
                               max: 1024,
                               divisions: 1023,
-                              label: _diskValue.toInt().toString(),
+                              label: _processorCores.toInt().toString(),
                               onChanged: (value) => setState(() => _diskValue = value),
                               activeColor: const Color(0xFF0632A1),
                               inactiveColor: Colors.grey.withOpacity(0.3),
@@ -392,16 +430,73 @@ Future<void> _submitRequest() async {
                       ).animate().fadeIn(duration: 500.ms).slideY(delay: 500.ms),
                       const SizedBox(height: 16),
                       _buildCard(
-                        isValid: _processorController.text.isNotEmpty,
-                        child: TextFormField(
-                          controller: _processorController,
-                          style: const TextStyle(color: Colors.black),
-                          decoration: const InputDecoration(
-                            labelText: 'Processor',
-                            labelStyle: TextStyle(color: Colors.grey),
-                            prefixIcon: Icon(Icons.speed, color: Color(0xFF0632A1)),
-                            border: InputBorder.none,
-                          ),
+                        isValid: _processorCores >= 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Processor Cores: ${_processorCores.toInt()}',
+                              style: const TextStyle(color: Colors.black),
+                            ),
+                            SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                thumbColor: const Color(0xFF0632A1),
+                                activeTrackColor: const Color(0xFF0632A1),
+                                inactiveTrackColor: Colors.grey.withOpacity(0.3),
+                                trackHeight: 6,
+                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                                overlayColor: const Color(0xFF0632A1).withOpacity(0.2),
+                                tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 4),
+                                activeTickMarkColor: const Color(0xFF0632A1),
+                                inactiveTickMarkColor: Colors.grey.withOpacity(0.5),
+                              ),
+                              child: Slider(
+                                value: _processorCores,
+                                min: 1,
+                                max: 32,
+                                divisions: 31, // Allows all integers from 1 to 32
+                                label: _processorCores.toInt().toString(),
+                                onChanged: (value) => setState(() => _processorCores = value.roundToDouble()),
+                              ),
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: const [
+                                Text(
+                                  '2',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '8',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '16',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '32',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ).animate().fadeIn(duration: 500.ms).slideY(delay: 600.ms),
                     ],

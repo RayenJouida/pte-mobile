@@ -1,0 +1,2 @@
+C:/Users/jouida/Desktop/PTE-master/pte_mobile/android/app/.cxx/Debug/1d3e561s/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/Users/jouida/Desktop/PTE-master/pte_mobile/android/app/.cxx/Debug/1d3e561s/armeabi-v7a/CMakeFiles/rebuild_cache.dir

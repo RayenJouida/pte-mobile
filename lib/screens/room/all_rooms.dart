@@ -1,10 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:pte_mobile/models/room.dart'; // Import your Room model
-import 'package:pte_mobile/screens/room/create_room.dart'; // Import the CreateRoomScreen
-import 'package:pte_mobile/screens/room/update_room.dart'; // Import the UpdateRoomScreen
-import 'package:pte_mobile/screens/room/room_details.dart'; // Import the RoomDetailsScreen
-import 'package:pte_mobile/services/room_service.dart'; // Import your RoomService
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:pte_mobile/models/room.dart';
+import 'package:pte_mobile/screens/room/create_room.dart';
+import 'package:pte_mobile/screens/room/update_room.dart';
+import 'package:pte_mobile/screens/room/room_details.dart';
+import 'package:pte_mobile/services/room_service.dart';
 
 class AllRoomsScreen extends StatefulWidget {
   @override
@@ -14,9 +14,8 @@ class AllRoomsScreen extends StatefulWidget {
 class _AllRoomsScreenState extends State<AllRoomsScreen> {
   final RoomService _roomService = RoomService();
   List<Room> _rooms = [];
-  List<Room> _filteredRooms = [];
   bool _isLoading = true;
-  bool _isSearching = false;
+  String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -26,11 +25,14 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
   }
 
   Future<void> _fetchRooms() async {
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
       final rooms = await _roomService.getAllRooms();
       setState(() {
         _rooms = rooms;
-        _filteredRooms = rooms;
         _isLoading = false;
       });
     } catch (e) {
@@ -48,7 +50,6 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
       await _roomService.deleteRoom(roomId);
       setState(() {
         _rooms.removeWhere((room) => room.id == roomId);
-        _filteredRooms.removeWhere((room) => room.id == roomId);
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Room deleted successfully')),
@@ -60,64 +61,151 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
     }
   }
 
-  void _toggleSearch() {
+  void _performSearch(String query) {
     setState(() {
-      _isSearching = !_isSearching;
-      if (!_isSearching) {
-        _searchController.clear();
-        _filteredRooms = _rooms;
-      }
+      _searchQuery = query;
     });
   }
 
-  void _performSearch(String query) {
-    setState(() {
-      _filteredRooms = _rooms.where((room) {
-        final label = room.label.toLowerCase();
-        final location = room.location.toLowerCase();
-        return label.contains(query.toLowerCase()) || location.contains(query.toLowerCase());
-      }).toList();
-    });
+  List<Room> get _filteredRooms {
+    if (_searchQuery.isEmpty) return _rooms;
+    return _rooms.where((room) {
+      return room.label.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          room.location.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFF5F5F5), // Light gray background
-      appBar: AppBar(
-        title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search by Label or Location...',
-                  hintStyle: TextStyle(color: Colors.white70),
-                  border: InputBorder.none,
-                ),
-                style: TextStyle(color: Colors.white),
-                onChanged: _performSearch,
-              )
-            : Text(
-                'All Rooms',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      body: Column(
+        children: [
+          // Upper Section (Primary Color)
+          Container(
+            height: MediaQuery.of(context).size.height * 0.2,
+            decoration: BoxDecoration(
+              color: Color(0xFF0632A1),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
               ),
-        centerTitle: true,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF0632A1), Color(0xFF3D5AFE)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+            ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Text(
+                    'All Rooms',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                ),
+                Positioned(
+                  left: 16,
+                  top: MediaQuery.of(context).padding.top + 16,
+                  child: IconButton(
+                    icon: Icon(Icons.chevron_left, color: Colors.white, size: 32),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+                Positioned(
+                  right: 16,
+                  top: MediaQuery.of(context).padding.top + 16,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.search, color: Colors.white),
+                        onPressed: () {
+                          showSearch(
+                            context: context,
+                            delegate: RoomSearchDelegate(_rooms),
+                          );
+                        },
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.refresh, color: Colors.white),
+                        onPressed: _fetchRooms,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.white),
-            onPressed: _toggleSearch,
-          ),
-          IconButton(
-            icon: Icon(Icons.refresh, color: Colors.white),
-            onPressed: _fetchRooms,
+
+          // Lower Section (White Background)
+          Expanded(
+            child: _isLoading
+                ? _buildShimmerLoading()
+                : _filteredRooms.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.meeting_room, size: 60, color: Colors.grey),
+                            SizedBox(height: 16),
+                            Text(
+                              'No rooms available',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _fetchRooms,
+                        child: ListView.builder(
+                          padding: EdgeInsets.all(16),
+                          itemCount: _filteredRooms.length,
+                          itemBuilder: (context, index) {
+                            final room = _filteredRooms[index];
+                            return Dismissible(
+                              key: Key(room.id),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                margin: EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                alignment: Alignment.centerRight,
+                                padding: EdgeInsets.only(right: 20),
+                                child: Icon(Icons.delete, color: Colors.white),
+                              ),
+                              confirmDismiss: (direction) async {
+                                return await showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: Text('Delete Room'),
+                                    content: Text('Are you sure you want to delete "${room.label}"?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(false),
+                                        child: Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(true),
+                                        child: Text('Delete', style: TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              onDismissed: (direction) {
+                                _deleteRoom(room.id);
+                              },
+                              child: _buildRoomCard(room)
+                                  .animate()
+                                  .fadeIn(duration: 300.ms, delay: (50 * index).ms)
+                                  .slideY(begin: 0.1, delay: (50 * index).ms),
+                            );
+                          },
+                        ),
+                      ),
           ),
         ],
       ),
@@ -133,132 +221,94 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
         backgroundColor: Color(0xFF0632A1),
         child: Icon(Icons.add, color: Colors.white),
       ),
-      body: _isLoading
-          ? _buildShimmerLoading()
-          : _filteredRooms.isEmpty
-              ? Center(child: Text('No rooms found', style: TextStyle(color: Colors.grey)))
-              : ListView.builder(
-                  padding: EdgeInsets.all(16),
-                  itemCount: _filteredRooms.length,
-                  itemBuilder: (context, index) {
-                    final room = _filteredRooms[index];
-                    return Dismissible(
-                      key: Key(room.id), // Unique key for each item
-                      direction: DismissDirection.endToStart, // Swipe from right to left
-                      background: Container(
-                        margin: EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(20), // Match card border radius
+    );
+  }
+
+  Widget _buildRoomCard(Room room) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RoomDetailsScreen(room: room),
+            ),
+          );
+        },
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    room.label,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.edit, color: Colors.blue),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => UpdateRoomScreen(room: room),
                         ),
-                        alignment: Alignment.centerRight,
-                        padding: EdgeInsets.only(right: 20),
-                        child: Icon(Icons.delete, color: Colors.white, size: 30),
-                      ),
-                      confirmDismiss: (direction) async {
-                        // Show a confirmation dialog with the room's label
-                        return await showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text('Delete Room'),
-                            content: Text('Are you sure you want to delete "${room.label}"?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(false),
-                                child: Text('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(true),
-                                child: Text('Delete', style: TextStyle(color: Colors.red)),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      onDismissed: (direction) {
-                        _deleteRoom(room.id); // Delete the room
-                      },
-                      child: GestureDetector(
-                        onDoubleTap: () {
-                          // Navigate to RoomDetailsScreen on double tap
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => RoomDetailsScreen(room: room),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          height: 150, // Uniform height for all cards
-                          margin: EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.3), // Translucent background
-                            borderRadius: BorderRadius.circular(20), // Rounded corners
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                              width: 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 10,
-                                offset: Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), // Blur effect
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    // Label with icon
-                                    Row(
-                                      children: [
-                                        Icon(Icons.meeting_room, color: Color(0xFF0632A1), size: 20),
-                                        SizedBox(width: 8),
-                                        Text(
-                                          room.label,
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF0632A1),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    // Location
-                                    Text(
-                                      'Location: ${room.location}',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold, // Bold label
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                    // Capacity
-                                    Text(
-                                      'Capacity: ${room.capacity}',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold, // Bold label
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                      ).then((_) => _fetchRooms());
+                    },
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.location_on, size: 16, color: Colors.grey),
+                  SizedBox(width: 8),
+                  Text(
+                    room.location,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.people, size: 16, color: Colors.grey),
+                  SizedBox(width: 8),
+                  Text(
+                    'Capacity: ${room.capacity}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -268,12 +318,71 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
       itemCount: 5,
       itemBuilder: (context, index) {
         return Container(
-          height: 150,
+          height: 120,
           margin: EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
             color: Colors.grey[300],
+            borderRadius: BorderRadius.circular(12),
           ),
+        ).animate().shimmer(duration: 1000.ms);
+      },
+    );
+  }
+}
+
+class RoomSearchDelegate extends SearchDelegate {
+  final List<Room> rooms;
+
+  RoomSearchDelegate(this.rooms);
+
+  @override
+  List<Widget> buildActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: Icon(Icons.clear),
+        onPressed: () {
+          query = '';
+        },
+      ),
+    ];
+  }
+
+  @override
+  Widget buildLeading(BuildContext context) {
+    return IconButton(
+      icon: Icon(Icons.arrow_back),
+      onPressed: () {
+        close(context, null);
+      },
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    final results = rooms.where((room) {
+      return room.label.toLowerCase().contains(query.toLowerCase()) ||
+          room.location.toLowerCase().contains(query.toLowerCase());
+    }).toList();
+
+    return _buildSearchResults(results);
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return buildResults(context);
+  }
+
+  Widget _buildSearchResults(List<Room> results) {
+    return ListView.builder(
+      itemCount: results.length,
+      itemBuilder: (context, index) {
+        final room = results[index];
+        return ListTile(
+          title: Text(room.label),
+          subtitle: Text(room.location),
+          onTap: () {
+            close(context, room);
+          },
         );
       },
     );

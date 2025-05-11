@@ -8,7 +8,7 @@ import 'package:pte_mobile/screens/login_screen.dart';
 import 'package:pte_mobile/screens/admin_screen.dart';
 import 'package:pte_mobile/screens/profile_screen.dart';
 import 'package:pte_mobile/screens/validate_code_screen.dart';
-import 'package:pte_mobile/screens/change_password_screen.dart';
+import 'package:pte_mobile/screens/update_password.dart'; // Updated import
 import 'package:pte_mobile/screens/feed/feed_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:pte_mobile/providers/theme_provider.dart';
@@ -50,7 +50,7 @@ class MyApp extends StatelessWidget {
         '/settings': (context) => SettingsScreen(),
         '/profile': (context) => ProfileScreen(),
         '/validate-code': (context) => ValidateCodeScreen(),
-        '/change-password': (context) => ChangePasswordScreen(),
+        '/update-password': (context) => const UpdatePasswordScreen(), // New route
         '/chat': (context) => ChatScreen(),
         '/feed': (context) => const FeedScreen(),
       },

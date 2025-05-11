@@ -77,6 +77,7 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
   }
 
   Future<void> _submitForm() async {
+    print('Submitting form...');
     if (_formKey.currentState!.validate()) {
       print('Form is valid');
 
@@ -155,6 +156,7 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
         cancelBtnText: 'No',
         confirmBtnColor: Theme.of(context).colorScheme.primary,
         onConfirmBtnTap: () async {
+          print('Confirming reservation...');
           Navigator.pop(context);
 
           final event = RoomEvent(
@@ -171,7 +173,6 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
 
           try {
             final createdEvent = await _roomService.createEvent(event);
-
             print('Event created successfully: $createdEvent');
 
             widget.onEventCreated(createdEvent);
@@ -183,6 +184,7 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
               text: 'Reservation created successfully!',
               confirmBtnColor: Theme.of(context).colorScheme.primary,
               onConfirmBtnTap: () {
+                print('Navigating back...');
                 Navigator.pop(context);
                 Navigator.pop(context);
               },
@@ -238,7 +240,7 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _startDate ?? DateTime.now(),
-      firstDate: DateTime.now().subtract(const Duration(days: 3650)), // 10 years back
+      firstDate: DateTime.now().subtract(const Duration(days: 3650)),
       lastDate: DateTime(2100),
     );
     if (pickedDate != null) {
@@ -335,34 +337,35 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
   }
 
   void _updateAvailableRooms(DateTime start, DateTime end) {
-  final overlappingEvents = _getOverlappingEvents(start, end);
-  final bookedRoomIds = overlappingEvents.map((event) => event.roomId).toSet();
+    final overlappingEvents = _getOverlappingEvents(start, end);
+    final bookedRoomIds = overlappingEvents.map((event) => event.roomId).toSet();
 
-  setState(() {
-    _availableRooms = _rooms.where((room) => !bookedRoomIds.contains(room.id)).toList();
-    if (!_availableRooms.any((room) => room.id == _selectedRoomId)) {
-      _selectedRoomId = null;
+    setState(() {
+      _availableRooms = _rooms.where((room) => !bookedRoomIds.contains(room.id)).toList();
+      if (!_availableRooms.any((room) => room.id == _selectedRoomId)) {
+        _selectedRoomId = null;
+      }
+    });
+
+    if (_availableRooms.isEmpty) {
+      QuickAlert.show(
+        context: context,
+        type: QuickAlertType.warning,
+        title: 'No Rooms Available',
+        text: 'Sorry, all rooms are booked for the selected time slot!',
+        confirmBtnText: 'OK',
+        confirmBtnColor: Theme.of(context).colorScheme.primary,
+        backgroundColor: Theme.of(context).colorScheme.background,
+        titleColor: Theme.of(context).colorScheme.onSurface,
+        textColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+        autoCloseDuration: const Duration(seconds: 3),
+      );
     }
-  });
-
-  if (_availableRooms.isEmpty) {
-    QuickAlert.show(
-      context: context,
-      type: QuickAlertType.warning,
-      title: 'No Rooms Available',
-      text: 'Sorry, all rooms are booked for the selected time slot!',
-      confirmBtnText: 'OK',
-      confirmBtnColor: Theme.of(context).colorScheme.primary,
-      backgroundColor: Theme.of(context).colorScheme.background,
-      titleColor: Theme.of(context).colorScheme.onSurface,
-      textColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-      autoCloseDuration: const Duration(seconds: 3),
-    );
   }
-}
 
   bool _isFormComplete() {
     final now = DateTime.now();
+    print('Checking form completion - Start: $_startDate, End: $_endDate, Title: ${_titleController.text}, Room: $_selectedRoomId');
     return _startDate != null &&
         _endDate != null &&
         _titleController.text.isNotEmpty &&
@@ -387,15 +390,27 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
                 bottomRight: Radius.circular(30),
               ),
             ),
-            child: Center(
-              child: Text(
-                'Reserve a Room',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onPrimary,
+            child: Stack(
+              children: [
+                Center(
+                  child: Text(
+                    'Reserve a Room',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
                 ),
-              ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                Positioned(
+                  left: 16,
+                  top: MediaQuery.of(context).padding.top + 16,
+                  child: IconButton(
+                    icon: const Icon(Icons.chevron_left, color: Colors.white, size: 32),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -452,123 +467,121 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
                         ),
                       ],
                     ),
-                    if (datesSelected) ...[
-                      const SizedBox(height: 16),
-                      _buildCard(
-                        child: TextFormField(
-                          controller: _titleController,
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-                          decoration: InputDecoration(
-                            labelText: 'Title',
-                            labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
-                            prefixIcon: Icon(Icons.title, color: Theme.of(context).colorScheme.primary),
-                            border: InputBorder.none,
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter a title';
-                            }
-                            return null;
-                          },
+                    const SizedBox(height: 16),
+                    _buildCard(
+                      child: TextFormField(
+                        controller: _titleController,
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                        decoration: InputDecoration(
+                          labelText: 'Title',
+                          labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
+                          prefixIcon: Icon(Icons.title, color: Theme.of(context).colorScheme.primary),
+                          border: InputBorder.none,
                         ),
-                      ).animate().fadeIn(duration: 500.ms).slideY(delay: 500.ms),
-                      const SizedBox(height: 16),
-                      _buildCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Select Room',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                              ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter a title';
+                          }
+                          return null;
+                        },
+                      ),
+                    ).animate().fadeIn(duration: 500.ms).slideY(delay: 500.ms),
+                    const SizedBox(height: 16),
+                    _buildCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Select Room',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                             ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              height: 100,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _rooms.length,
-                                itemBuilder: (context, index) {
-                                  final room = _rooms[index];
-                                  final isBooked = bookedRoomIds.contains(room.id);
-                                  final isSelected = _selectedRoomId == room.id;
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 100,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _rooms.length,
+                              itemBuilder: (context, index) {
+                                final room = _rooms[index];
+                                final isBooked = bookedRoomIds.contains(room.id);
+                                final isSelected = _selectedRoomId == room.id;
 
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 12),
-                                    child: GestureDetector(
-                                      onTap: isBooked
-                                          ? null
-                                          : () {
-                                              setState(() {
-                                                _selectedRoomId = room.id;
-                                              });
-                                            },
-                                      child: Container(
-                                        width: 150,
-                                        decoration: BoxDecoration(
-                                          color: isBooked
-                                              ? Colors.grey.shade300
-                                              : isSelected
-                                                  ? Theme.of(context).colorScheme.primary
-                                                  : Theme.of(context).colorScheme.background,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: GestureDetector(
+                                    onTap: isBooked
+                                        ? null
+                                        : () {
+                                            setState(() {
+                                              _selectedRoomId = room.id;
+                                            });
+                                          },
+                                    child: Container(
+                                      width: 150,
+                                      decoration: BoxDecoration(
+                                        color: isBooked
+                                            ? Colors.grey.shade300
+                                            : isSelected
+                                                ? Theme.of(context).colorScheme.primary
+                                                : Theme.of(context).colorScheme.background,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
+                                            blurRadius: 10,
+                                            spreadRadius: 2,
                                           ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
-                                              blurRadius: 10,
-                                              spreadRadius: 2,
+                                        ],
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              room.label,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                                color: isBooked
+                                                    ? Theme.of(context).colorScheme.onSurface.withOpacity(0.4)
+                                                    : isSelected
+                                                        ? Theme.of(context).colorScheme.onPrimary
+                                                        : Theme.of(context).colorScheme.onSurface,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              room.location,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: isBooked
+                                                    ? Theme.of(context).colorScheme.onSurface.withOpacity(0.4)
+                                                    : isSelected
+                                                        ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.7)
+                                                        : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                                              ),
                                             ),
                                           ],
                                         ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(12),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Text(
-                                                room.label,
-                                                style: TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: isBooked
-                                                      ? Theme.of(context).colorScheme.onSurface.withOpacity(0.4)
-                                                      : isSelected
-                                                          ? Theme.of(context).colorScheme.onPrimary
-                                                          : Theme.of(context).colorScheme.onSurface,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                room.location,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: isBooked
-                                                      ? Theme.of(context).colorScheme.onSurface.withOpacity(0.4)
-                                                      : isSelected
-                                                          ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.7)
-                                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
                                       ),
                                     ),
-                                  );
-                                },
-                              ),
+                                  ),
+                                );
+                              },
                             ),
-                          ],
-                        ),
-                      ).animate().fadeIn(duration: 500.ms).slideY(delay: 600.ms),
-                    ],
+                          ),
+                        ],
+                      ),
+                    ).animate().fadeIn(duration: 500.ms).slideY(delay: 600.ms),
                     const SizedBox(height: 24),
                     Container(
                       width: double.infinity,

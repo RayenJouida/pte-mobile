@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'dart:math'; // For Random number generation
+import 'dart:math';
 import '../services/auth_service.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -26,13 +26,13 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController addressController = TextEditingController();
   final TextEditingController departmentController = TextEditingController();
   bool _isTeamLeader = false;
-  bool _isPasswordVisible = false; // For password visibility toggle
-  double _experienceYears = 0; // Slider value for experience
+  bool _isPasswordVisible = false;
+  double _experienceYears = 0;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    // Show the pop-up when the screen is first loaded
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showWelcomePopup(context);
     });
@@ -52,45 +52,62 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _submitSignup() async {
     if (!_formKey.currentState!.validate()) return;
 
-    bool success = await AuthService().signUp(
-      matricule: matriculeController.text,
-      firstName: firstNameController.text,
-      lastName: lastNameController.text,
-      email: emailController.text,
-      password: passwordController.text,
-      experience: _experienceYears.toString(),
-      phone: phoneController.text,
-      nationality: nationalityController.text,
-      fs: fsController.text,
-      bio: bioController.text,
-      address: addressController.text,
-      department: departmentController.text,
-      teamLeader: _isTeamLeader,
-      imagePath: _imageFile?.path,
-    );
+    setState(() {
+      _isLoading = true;
+    });
 
-    if (success) {
-      _showSuccessPopup(context); // Show success pop-up
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Signup Failed!')),
+    try {
+      bool success = await AuthService().signUp(
+        matricule: matriculeController.text,
+        firstName: firstNameController.text,
+        lastName: lastNameController.text,
+        email: emailController.text,
+        password: passwordController.text,
+        experience: _experienceYears.toString(),
+        phone: phoneController.text,
+        nationality: nationalityController.text,
+        fs: fsController.text,
+        bio: bioController.text,
+        address: addressController.text,
+        department: departmentController.text,
+        teamLeader: _isTeamLeader,
+        imagePath: _imageFile?.path,
       );
+
+      if (success) {
+        _showSuccessPopup(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Signup Failed!'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
   void _showWelcomePopup(BuildContext context) {
     showDialog(
       context: context,
-      barrierDismissible: false, // Prevent dismissing by tapping outside
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
         ),
         title: Text(
           'Welcome to Registration!',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
             color: Color(0xFF0632A1),
           ),
@@ -102,42 +119,93 @@ class _SignupScreenState extends State<SignupScreen> {
             Icon(
               Icons.info_outline,
               color: Color(0xFF0632A1),
-              size: 50,
+              size: 40,
             ),
-            SizedBox(height: 16),
+            SizedBox(height: 12),
             Text(
               'To ensure a smooth registration process, please follow these guidelines:',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 color: Colors.black87,
               ),
               textAlign: TextAlign.center,
             ),
-            SizedBox(height: 16),
-            Text(
-              '1. Fill out all fields in each step.\n'
-              '2. Ensure your email is valid (e.g., name@gmail.com).\n'
-              '3. Use a strong password (at least 8 characters, including letters and numbers).\n'
-              '4. Add a profile picture in the final step.',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade700,
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
               ),
-              textAlign: TextAlign.left,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildGuidelineItem('1', 'Fill out all fields in each step.'),
+                  _buildGuidelineItem('2', 'Ensure your email is valid (e.g., name@gmail.com).'),
+                  _buildGuidelineItem('3', 'Use a strong password (at least 8 characters with letters and numbers).'),
+                  _buildGuidelineItem('4', 'Add a profile picture in the final step.'),
+                ],
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // Close the pop-up
+              Navigator.pop(context);
             },
+            style: TextButton.styleFrom(
+              foregroundColor: Color(0xFF0632A1),
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
             child: Text(
               'Got it!',
               style: TextStyle(
-                fontSize: 18,
-                color: Color(0xFF0632A1),
+                fontSize: 16,
                 fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGuidelineItem(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: Color(0xFF0632A1),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
               ),
             ),
           ),
@@ -149,34 +217,42 @@ class _SignupScreenState extends State<SignupScreen> {
   void _showSuccessPopup(BuildContext context) {
     showDialog(
       context: context,
-      barrierDismissible: false, // Prevent dismissing by tapping outside
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: Text(
-          'Sign Up Request Sent!',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF0632A1),
-          ),
-          textAlign: TextAlign.center,
+          borderRadius: BorderRadius.circular(16),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.check_circle,
-              color: Colors.green,
-              size: 50,
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle,
+                color: Colors.green,
+                size: 50,
+              ),
             ),
             SizedBox(height: 16),
             Text(
+              'Sign Up Request Sent!',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0632A1),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 12),
+            Text(
               'Your sign-up request has been sent successfully. You will receive an email once it is approved.',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
                 color: Colors.black87,
               ),
               textAlign: TextAlign.center,
@@ -186,10 +262,10 @@ class _SignupScreenState extends State<SignupScreen> {
       ),
     );
 
-    // Redirect to login screen after 3 seconds
-    Future.delayed(Duration(seconds: 3), () {
-      Navigator.pop(context); // Close the pop-up
-      Navigator.pushReplacementNamed(context, '/login'); // Redirect to login screen
+    // Redirect to login screen after 2.5 seconds (reduced from 3)
+    Future.delayed(Duration(milliseconds: 2500), () {
+      Navigator.pop(context);
+      Navigator.pushReplacementNamed(context, '/login');
     });
   }
 
@@ -197,41 +273,41 @@ class _SignupScreenState extends State<SignupScreen> {
     final firstName = firstNameController.text.trim();
     final lastName = lastNameController.text.trim();
     if (firstName.isNotEmpty && lastName.isNotEmpty) {
-      final randomNumber = Random().nextInt(99) + 1; // Random number between 1 and 99
+      final randomNumber = Random().nextInt(99) + 1;
       matriculeController.text = '$firstName$lastName$randomNumber';
     } else {
-      matriculeController.text = ''; // Clear if first name or last name is empty
+      matriculeController.text = '';
     }
-    setState(() {}); // Rebuild to update button state
+    setState(() {});
   }
 
   Widget _buildMatriculeField() {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 12.0),
+      padding: EdgeInsets.symmetric(vertical: 10.0),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.grey.shade100, // Light grey background
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: Color(0xFF0632A1), // Dark blue border
-            width: 1.5,
+            color: Color(0xFF0632A1).withOpacity(0.3),
+            width: 1,
           ),
         ),
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
-              Icon(Icons.badge, color: Color(0xFF0632A1)), // Matricule icon
-              SizedBox(width: 16),
+              Icon(Icons.badge, color: Color(0xFF0632A1), size: 20),
+              SizedBox(width: 12),
               Expanded(
                 child: Text(
                   matriculeController.text.isEmpty
                       ? "Matricule will be generated automatically"
                       : matriculeController.text,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 14,
                     color: Colors.black87,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -245,14 +321,14 @@ class _SignupScreenState extends State<SignupScreen> {
   List<Step> _buildSteps() {
     return [
       Step(
-        title: Icon(Icons.person, color: Color(0xFF0632A1)), // Icon for "Infos"
+        title: Icon(Icons.person, color: Color(0xFF0632A1)),
         content: Column(children: [
           _buildTextField(
             firstNameController,
             "First Name",
             Icons.person,
             onChanged: (value) {
-              _generateMatricule(); // Generate matricule on first name change
+              _generateMatricule();
             },
           ),
           _buildTextField(
@@ -260,45 +336,72 @@ class _SignupScreenState extends State<SignupScreen> {
             "Last Name",
             Icons.person_outline,
             onChanged: (value) {
-              _generateMatricule(); // Generate matricule on last name change
+              _generateMatricule();
             },
           ),
-          _buildMatriculeField(), // Custom matricule field
+          _buildMatriculeField(),
         ]),
         isActive: _currentStep >= 0,
         state: _currentStep > 0 ? StepState.complete : StepState.indexed,
       ),
       Step(
-        title: Icon(Icons.description, color: Color(0xFF0632A1)), // Icon for "Details"
+        title: Icon(Icons.description, color: Color(0xFF0632A1)),
         content: Column(children: [
-          _buildTextField(emailController, "Email example : name@gmail.com", Icons.email, isEmail: true),
-          _buildTextField(passwordController, "Password example : Password123", Icons.lock, isPassword: true),
-          // Beautiful Experience Slider
+          _buildTextField(emailController, "Email", Icons.email, 
+            placeholder: "name@gmail.com",
+            isEmail: true),
+          _buildTextField(passwordController, "Password", Icons.lock, 
+            placeholder: "Min. 8 characters with letters & numbers",
+            isPassword: true),
+          // Refined Experience Slider
           Padding(
-            padding: EdgeInsets.symmetric(vertical: 12.0),
+            padding: EdgeInsets.symmetric(vertical: 10.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  "Experience (years): ${_experienceYears.toStringAsFixed(1)}",
-                  style: TextStyle(color: Color(0xFF0632A1), fontSize: 16, fontWeight: FontWeight.bold),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      "Experience",
+                      style: TextStyle(
+                        color: Colors.grey.shade700, 
+                        fontSize: 14, 
+                        fontWeight: FontWeight.w500
+                      ),
+                    ),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Color(0xFF0632A1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        "${_experienceYears.toStringAsFixed(1)} years",
+                        style: TextStyle(
+                          color: Colors.white, 
+                          fontSize: 12, 
+                          fontWeight: FontWeight.bold
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 6),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Color(0xFF0632A1).withOpacity(0.3), width: 1.5),
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
                   ),
                   child: Slider(
                     value: _experienceYears,
                     min: 0,
-                    max: 15, // Max set to 15
-                    divisions: 15,
-                    label: _experienceYears.toStringAsFixed(1),
+                    max: 15,
+                    divisions: 30, // More granular divisions
                     activeColor: Color(0xFF0632A1),
-                    inactiveColor: Color(0xFF0632A1).withOpacity(0.3),
+                    inactiveColor: Color(0xFF0632A1).withOpacity(0.2),
                     onChanged: (value) {
                       setState(() {
                         _experienceYears = value;
@@ -314,26 +417,97 @@ class _SignupScreenState extends State<SignupScreen> {
         state: _currentStep > 1 ? StepState.complete : StepState.indexed,
       ),
       Step(
-        title: Icon(Icons.account_circle, color: Color(0xFF0632A1)), // Icon for "Profile"
+        title: Icon(Icons.account_circle, color: Color(0xFF0632A1)),
         content: Column(children: [
-          SwitchListTile(
-            title: Text("Team Leader", style: TextStyle(color: Color(0xFF0632A1), fontSize: 16)),
-            value: _isTeamLeader,
-            onChanged: (bool value) => setState(() => _isTeamLeader = value),
-          ),
-          GestureDetector(
-            onTap: _pickImage,
-            child: CircleAvatar(
-              radius: 60, // Larger profile picture
-              backgroundColor: Colors.grey.shade200,
-              backgroundImage: _imageFile != null ? FileImage(_imageFile!) : null,
-              child: _imageFile == null
-                  ? Icon(Icons.camera_alt, size: 50, color: Colors.grey.shade800) // Larger icon
-                  : null,
+          // Refined Team Leader Switch
+          Container(
+            margin: EdgeInsets.only(bottom: 16),
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.group, color: Color(0xFF0632A1), size: 20),
+                    SizedBox(width: 12),
+                    Text(
+                      "Team Leader",
+                      style: TextStyle(
+                        color: Colors.grey.shade800,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                Switch(
+                  value: _isTeamLeader,
+                  onChanged: (bool value) => setState(() => _isTeamLeader = value),
+                  activeColor: Color(0xFF0632A1),
+                  activeTrackColor: Color(0xFF0632A1).withOpacity(0.4),
+                ),
+              ],
             ),
           ),
-          SizedBox(height: 10),
-          Text("Tap to add a profile picture", style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+          // Refined Profile Picture Selector
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(vertical: 20),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
+            ),
+            child: Column(
+              children: [
+                GestureDetector(
+                  onTap: _pickImage,
+                  child: Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.grey.shade200,
+                        backgroundImage: _imageFile != null ? FileImage(_imageFile!) : null,
+                        child: _imageFile == null
+                            ? Icon(Icons.person, size: 40, color: Colors.grey.shade500)
+                            : null,
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Color(0xFF0632A1),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: Icon(
+                            Icons.camera_alt,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  "Tap to add a profile picture",
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ]),
         isActive: _currentStep >= 2,
         state: _currentStep > 2 ? StepState.complete : StepState.indexed,
@@ -352,34 +526,46 @@ class _SignupScreenState extends State<SignupScreen> {
     bool enabled = true,
   }) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 12.0), // Increased padding
+      padding: EdgeInsets.symmetric(vertical: 10.0),
       child: TextFormField(
         controller: controller,
-        obscureText: isPassword && !_isPasswordVisible, // Toggle password visibility
-        style: TextStyle(color: Colors.black, fontSize: 16), // Larger text
+        obscureText: isPassword && !_isPasswordVisible,
+        style: TextStyle(color: Colors.black87, fontSize: 14),
         decoration: InputDecoration(
           labelText: label,
-          hintText: placeholder, // Add placeholder
-          labelStyle: TextStyle(color: Colors.grey.shade700, fontSize: 16), // Larger label
-          prefixIcon: Icon(icon, color: Color(0xFF0632A1)), // Dark blue icon
+          hintText: placeholder,
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+          labelStyle: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+          prefixIcon: Icon(icon, color: Color(0xFF0632A1), size: 18),
           suffixIcon: isPassword
               ? IconButton(
                   icon: Icon(
                     _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                    color: Color(0xFF0632A1)),
+                    color: Color(0xFF0632A1),
+                    size: 18,
+                  ),
                   onPressed: () {
                     setState(() {
-                      _isPasswordVisible = !_isPasswordVisible; // Toggle visibility
+                      _isPasswordVisible = !_isPasswordVisible;
                     });
                   },
                 )
               : null,
           filled: true,
-          fillColor: Colors.white, // White background for input fields
+          fillColor: Colors.grey.shade50,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8), // Reduced border radius
-            borderSide: BorderSide(color: Color(0xFF0632A1)), // Dark blue border
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
           ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Color(0xFF0632A1), width: 1.5),
+          ),
+          contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
         ),
         validator: (value) {
           if (value == null || value.isEmpty) {
@@ -389,12 +575,12 @@ class _SignupScreenState extends State<SignupScreen> {
             return 'Enter a valid email (e.g., name@gmail.com)';
           }
           if (isPassword && (value.length < 8 || !RegExp(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$").hasMatch(value))) {
-            return 'Password must be at least 8 characters and include letters and numbers';
+            return 'Password must be at least 8 characters with letters and numbers';
           }
           return null;
         },
-        onChanged: onChanged, // Pass the onChanged callback
-        enabled: enabled, // Enable/disable the field
+        onChanged: onChanged,
+        enabled: enabled,
       ),
     );
   }
@@ -419,118 +605,114 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // White background for a clean look
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Illustration Image (register.jpg)
-            Padding(
-              padding: const EdgeInsets.only(top: 80), // Reduced top padding
-              child: Image.asset(
-                'assets/illustrations/register.jpg',
-                height: 230, // Increased image height
-                fit: BoxFit.cover,
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Color(0xFF0632A1)),
+          onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
+        ),
+        title: Text(
+          "Create Account",
+          style: TextStyle(
+            color: Color(0xFF0632A1),
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              // Illustration Image with reduced size
+              Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: Image.asset(
+                  'assets/illustrations/register.jpg',
+                  height: 180,
+                  fit: BoxFit.contain,
+                ),
               ),
-            ),
-            // Main Content
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    // Page Title
-                    Text(
-                      "Please fill in the form",
-                      style: TextStyle(
-                        color: Color(0xFF0632A1),
-                        fontSize: 25,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: 42), // Reduced space between image and title
-                    // Horizontal Stepper with Icons
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 1), // Shift stepper to the left
+              // Main Content
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      // Step Indicator
+                      Container(
+                        margin: EdgeInsets.symmetric(vertical: 20),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.start, // Align to the start (left)
-                          children: _buildSteps().asMap().entries.map((entry) {
-                            final index = entry.key;
-                            final step = entry.value;
-                            final icon = step.title as Icon; // Extract the icon from the step title
-
-                            return GestureDetector(
-                              onTap: () {
-                                if (_currentStep != index) {
-                                  setState(() {
-                                    _currentStep = index;
-                                  });
-                                }
-                              },
-                              child: Container(
-                                padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12), // Wider padding
-                                margin: EdgeInsets.symmetric(horizontal: 4),
-                                decoration: BoxDecoration(
-                                  color: _currentStep == index ? Color(0xFF0632A1) : Colors.white,
-                                  borderRadius: BorderRadius.circular(8), // Reduced border radius
-                                  border: Border.all(
-                                    color: _currentStep == index ? Color(0xFF0632A1) : Color(0xFF0632A1).withOpacity(0.3), // Neumorphism blue border
-                                    width: 1.5,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.grey.withOpacity(0.2),
-                                      spreadRadius: 2,
-                                      blurRadius: 5,
-                                      offset: Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: Icon(
-                                  icon.icon, // Use the icon from the step
-                                  color: _currentStep == index ? Colors.white : Color(0xFF0632A1),
-                                  size: 24, // Adjust icon size
-                                ),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(3, (index) {
+                            return Container(
+                              width: 80,
+                              height: 4,
+                              margin: EdgeInsets.symmetric(horizontal: 4),
+                              decoration: BoxDecoration(
+                                color: _currentStep >= index 
+                                    ? Color(0xFF0632A1) 
+                                    : Color(0xFF0632A1).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(2),
                               ),
                             );
-                          }).toList(),
+                          }),
                         ),
                       ),
-                    ),
-                    SizedBox(height: 20),
-                    // Step Content
-                    _buildSteps()[_currentStep].content,
-                    SizedBox(height: 20),
-                    // Navigation Buttons with Icons
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (_currentStep != 0)
-                          Container(
-                            width: 120, // Wider back button
-                            child: IconButton(
-                              onPressed: () {
-                                setState(() => _currentStep--);
-                              },
-                              icon: Icon(Icons.arrow_back, size: 32, color: Color(0xFF0632A1)),
-                              style: IconButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                padding: EdgeInsets.all(16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(color: Color(0xFF0632A1), width: 1.5),
-                                ),
-                              ),
-                            ),
+                      
+                      // Step Title
+                      Container(
+                        margin: EdgeInsets.only(bottom: 16),
+                        child: Text(
+                          _currentStep == 0 
+                              ? "Personal Information" 
+                              : _currentStep == 1 
+                                  ? "Account Details" 
+                                  : "Profile Setup",
+                          style: TextStyle(
+                            color: Color(0xFF0632A1),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
                           ),
-                        SizedBox(width: 20),
-                        Container(
-                          width: 120, // Wider next button
-                          child: IconButton(
-                            onPressed: _isStepValid(_currentStep)
+                        ),
+                      ),
+                      
+                      // Step Content
+                      _buildSteps()[_currentStep].content,
+                      SizedBox(height: 24),
+                      
+                      // Navigation Buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Back Button
+                          _currentStep > 0
+                              ? ElevatedButton.icon(
+                                  onPressed: () {
+                                    setState(() => _currentStep--);
+                                  },
+                                  icon: Icon(Icons.arrow_back, size: 16),
+                                  label: Text("Back"),
+                                  style: ElevatedButton.styleFrom(
+                                    foregroundColor: Color(0xFF0632A1),
+                                    backgroundColor: Colors.white,
+                                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(color: Color(0xFF0632A1), width: 1),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                )
+                              : SizedBox(width: 100), // Empty space if on first step
+                          
+                          // Next/Submit Button
+                          ElevatedButton.icon(
+                            onPressed: _isStepValid(_currentStep) && !_isLoading
                                 ? () {
                                     if (_currentStep < _buildSteps().length - 1) {
                                       setState(() => _currentStep++);
@@ -538,51 +720,98 @@ class _SignupScreenState extends State<SignupScreen> {
                                       _submitSignup();
                                     }
                                   }
-                                : null, // Disable if step is not valid
-                            icon: Icon(
-                              Icons.arrow_forward,
-                              size: 32,
-                              color: _isStepValid(_currentStep) ? Colors.white : Colors.white.withOpacity(0.5), // Semi-transparent icon when disabled
+                                : null,
+                            icon: _isLoading
+                                ? SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    _currentStep < _buildSteps().length - 1
+                                        ? Icons.arrow_forward
+                                        : Icons.check,
+                                    size: 16,
+                                  ),
+                            label: Text(
+                              _isLoading
+                                  ? "Processing..."
+                                  : _currentStep < _buildSteps().length - 1
+                                      ? "Next"
+                                      : "Submit",
                             ),
-                            style: IconButton.styleFrom(
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.white,
                               backgroundColor: _isStepValid(_currentStep)
-                                  ? Color(0xFF0632A1) // Primary color when enabled
-                                  : Color(0xFF0632A1).withOpacity(0.3), // Semi-transparent primary color when disabled
-                              padding: EdgeInsets.all(16),
+                                  ? Color(0xFF0632A1)
+                                  : Color(0xFF0632A1).withOpacity(0.3),
+                              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: _isStepValid(_currentStep)
-                                      ? Color(0xFF0632A1) // Primary color border when enabled
-                                      : Color(0xFF0632A1).withOpacity(0.3), // Semi-transparent border when disabled
-                                  width: 1.5,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              elevation: 2,
+                              shadowColor: Color(0xFF0632A1).withOpacity(0.3),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      // Login Link
+                      Padding(
+                        padding: EdgeInsets.only(top: 30, bottom: 20),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              "Already have an account? ",
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.pushReplacementNamed(context, '/login');
+                              },
+                              child: Text(
+                                "Login",
+                                style: TextStyle(
+                                  color: Color(0xFF0632A1),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    // "Already have an account? Login" link
-                    Padding(
-                      padding: EdgeInsets.only(top: 40, bottom: 20), // Moved further down
-                      child: TextButton(
-                        onPressed: () {
-                          Navigator.pushReplacementNamed(context, '/login'); // Adjust to your route
-                        },
-                        child: Text(
-                          "Already have an account? Login",
-                          style: TextStyle(color: Color(0xFF0632A1), fontSize: 16, fontWeight: FontWeight.bold),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    matriculeController.dispose();
+    firstNameController.dispose();
+    lastNameController.dispose();
+    emailController.dispose();
+    passwordController.dispose();
+    phoneController.dispose();
+    nationalityController.dispose();
+    fsController.dispose();
+    bioController.dispose();
+    addressController.dispose();
+    departmentController.dispose();
+    super.dispose();
   }
 }

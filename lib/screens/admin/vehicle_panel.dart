@@ -154,7 +154,7 @@ class _VehiclePanelState extends State<VehiclePanel> {
                         primaryXAxis: CategoryAxis(),
                         title: ChartTitle(text: 'Events per Vehicle'),
                         legend: Legend(isVisible: true),
-                        series: <ChartSeries<ChartData, String>>[
+                        series: <CartesianSeries<ChartData, String>>[
                           BarSeries<ChartData, String>(
                             dataSource: _getVehicleEventCounts(),
                             xValueMapper: (ChartData data, _) => data.label,
@@ -195,7 +195,7 @@ class _VehiclePanelState extends State<VehiclePanel> {
                         primaryXAxis: CategoryAxis(),
                         title: ChartTitle(text: 'Monthly Event Trends'),
                         legend: Legend(isVisible: true),
-                        series: <ChartSeries<LineChartData, String>>[
+                        series: <CartesianSeries<LineChartData, String>>[
                           LineSeries<LineChartData, String>(
                             dataSource: _getEventTrends(),
                             xValueMapper: (LineChartData data, _) => data.label,
@@ -216,7 +216,7 @@ class _VehiclePanelState extends State<VehiclePanel> {
                         primaryXAxis: CategoryAxis(),
                         title: ChartTitle(text: 'Event Range by Vehicle'),
                         legend: Legend(isVisible: true),
-                        series: <ChartSeries<RangeColumnData, String>>[
+                        series: <CartesianSeries<RangeColumnData, String>>[
                           RangeColumnSeries<RangeColumnData, String>(
                             dataSource: _getRangeColumnData(),
                             xValueMapper: (RangeColumnData data, _) => data.label,
@@ -238,7 +238,7 @@ class _VehiclePanelState extends State<VehiclePanel> {
                         primaryXAxis: CategoryAxis(),
                         title: ChartTitle(text: 'Bubble Chart'),
                         legend: Legend(isVisible: true),
-                        series: <ChartSeries<BubbleData, String>>[
+                        series: <CartesianSeries<BubbleData, String>>[
                           BubbleSeries<BubbleData, String>(
                             dataSource: _getBubbleData(),
                             xValueMapper: (BubbleData data, _) => data.label,

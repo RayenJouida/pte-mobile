@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:pte_mobile/models/post.dart';
 import 'package:pte_mobile/models/user.dart';
 import 'package:pte_mobile/screens/edit_profile_screen.dart';
+import 'package:pte_mobile/screens/feed/post_details.dart';
+import 'package:pte_mobile/screens/settings_screen.dart'; // Assuming SettingsScreen exists
 import 'package:pte_mobile/services/post_service.dart';
 import 'package:pte_mobile/services/user_service.dart';
+import 'package:pte_mobile/widgets/assistant_navbar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/theme.dart';
-import '../config/env.dart'; // Added this import
+import '../config/env.dart';
+import '../widgets/assistant_sidebar.dart';
+import '../widgets/admin_sidebar.dart';
+import '../widgets/labmanager_sidebar.dart';
 
 class ProfileScreen extends StatefulWidget {
   @override
   _ProfileScreenState createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   User? user;
   bool isLoading = true;
   String? errorMessage;
@@ -26,11 +33,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int postCount = 0;
   int savedCount = 0;
   int likesCount = 0;
+  String? _userRole;
+  int _currentIndex = 2; // Profile tab index
+  late TabController _tabController;
+  final ScrollController _scrollController = ScrollController();
+  bool _showAppBarTitle = false;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
     _fetchUserDetailsAndPosts();
+    _loadUserRole();
+    
+    _scrollController.addListener(() {
+      if (_scrollController.offset > 180 && !_showAppBarTitle) {
+        setState(() {
+          _showAppBarTitle = true;
+        });
+      } else if (_scrollController.offset <= 180 && _showAppBarTitle) {
+        setState(() {
+          _showAppBarTitle = false;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _userRole = prefs.getString('userRole');
+    });
   }
 
   Future<void> _fetchUserDetailsAndPosts() async {
@@ -38,76 +78,97 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('userId');
       if (userId == null) throw Exception('No user ID found');
-      debugPrint('Fetching for userId: $userId');
 
       final userData = await _userService.getUserById(userId);
       final posts = await _postService.getUserPosts(userId);
-      debugPrint('User Posts fetched: ${posts.length}');
       final saved = await _postService.getUserSavedPosts(userId);
-      debugPrint('Saved Posts fetched: ${saved.length}');
 
-      // Calculate likes from userPosts first
       int totalLikes = 0;
       for (var post in posts) {
         totalLikes += post.likes.length;
-        debugPrint('User Post ${post.id} has ${post.likes.length} likes: ${post.likes.map((like) => like.user).toList()}');
       }
-      debugPrint('Total Likes from userPosts: $totalLikes');
 
-      // Try fetching all approved posts
       final allPosts = await _postService.getAllApprovedPosts();
-      debugPrint('All Approved Posts fetched: ${allPosts.length}');
-      for (var post in allPosts) {
-        debugPrint('Approved Post ${post.id} has ${post.likes.length} likes: ${post.likes.map((like) => like.user).toList()}');
-      }
-      final likedFromAll = allPosts.where((post) => post.likes.any((like) => like.user == userId)).toList();
-      debugPrint('Liked Posts from allPosts: ${likedFromAll.length}');
-      if (likedFromAll.isNotEmpty) {
-        debugPrint('Liked Posts IDs: ${likedFromAll.map((p) => p.id).toList()}');
-      }
+      final likedFromAll = allPosts.where((post) => 
+        post.likes.any((like) => like.user == userId)).toList();
 
-      // Fallback if allPosts fails
       List<Post> liked = likedFromAll;
       if (liked.isEmpty && totalLikes > 0) {
-        debugPrint('Mismatch detected! Likes exist but no liked posts found in allPosts.');
-        // Try a direct liked posts fetch (assuming endpoint exists)
         try {
-          liked = await _postService.getUserLikedPosts(userId); // Hypothetical method
-          debugPrint('Liked Posts from direct fetch: ${liked.length}');
-          if (liked.isNotEmpty) {
-            debugPrint('Direct fetch succeeded! Liked Post IDs: ${liked.map((p) => p.id).toList()}');
-          }
+          liked = await _postService.getUserLikedPosts(userId);
         } catch (e) {
-          debugPrint('Direct fetch failed: $e. Falling back to userPosts filter.');
-          // Fallback to filtering userPosts (though this only shows user's own liked posts)
-          liked = posts.where((post) => post.likes.any((like) => like.user == userId)).toList();
-          debugPrint('Liked Posts from userPosts fallback: ${liked.length}');
+          liked = posts.where((post) => 
+            post.likes.any((like) => like.user == userId)).toList();
         }
       }
 
-      setState(() {
-        user = User.fromJson(userData);
-        userPosts = posts;
-        savedPosts = saved;
-        likedPosts = liked;
-        postCount = posts.length;
-        savedCount = saved.length;
-        likesCount = totalLikes;
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          user = User.fromJson(userData);
+          userPosts = posts;
+          savedPosts = saved;
+          likedPosts = liked;
+          postCount = posts.length;
+          savedCount = saved.length;
+          likesCount = totalLikes;
+          isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint('Error fetching profile data: $e');
-      setState(() {
-        errorMessage = 'Failed to load profile: $e';
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          errorMessage = 'Failed to load profile: $e';
+          isLoading = false;
+        });
+      }
     }
   }
 
+  Future<void> _refreshProfile() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+    await _fetchUserDetailsAndPosts();
+  }
+
   void _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Logout'),
+        content: Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF0632A1),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text('Logout'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _goToSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => SettingsScreen()), // Navigate to SettingsScreen
+    );
   }
 
   String _getFlagEmoji(String? nationality) {
@@ -131,291 +192,594 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showAboutDialog(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: colorScheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('About', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: colorScheme.primary)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildInfoRow(FontAwesomeIcons.idCard, 'Matricule', user?.matricule ?? 'N/A', colorScheme),
-            _buildInfoRow(FontAwesomeIcons.phone, 'Phone', user?.phone ?? 'N/A', colorScheme),
-            _buildInfoRow(FontAwesomeIcons.building, 'Department', user?.department ?? 'N/A', colorScheme),
-            _buildInfoRow(FontAwesomeIcons.briefcase, 'Experience', user?.experience.toString() ?? 'N/A', colorScheme),
-          ],
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: EdgeInsets.zero,
+        content: Container(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                decoration: BoxDecoration(
+                  color: Color(0xFF0632A1),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Center(
+                  child: Text(
+                    'About ${user?.firstName ?? 'User'}',
+                    style: TextStyle(
+                      fontSize: 20, 
+                      fontWeight: FontWeight.bold, 
+                      color: Colors.white
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    _buildInfoRow(FontAwesomeIcons.idCard, 'Matricule', user?.matricule ?? 'N/A'),
+                    _buildInfoRow(FontAwesomeIcons.phone, 'Phone', user?.phone ?? 'N/A'),
+                    _buildInfoRow(FontAwesomeIcons.building, 'Department', user?.department ?? 'N/A'),
+                    _buildInfoRow(FontAwesomeIcons.briefcase, 'Experience', '${user?.experience ?? 'N/A'} years'),
+                    _buildInfoRow(FontAwesomeIcons.envelope, 'Email', user?.email ?? 'N/A'),
+                    if (user?.address != null && user!.address!.isNotEmpty)
+                      _buildInfoRow(FontAwesomeIcons.locationDot, 'Address', user?.address ?? 'N/A'),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Close', style: TextStyle(color: colorScheme.primary)),
+            style: TextButton.styleFrom(
+              foregroundColor: Color(0xFF0632A1),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+            child: Text('Close', style: TextStyle(fontSize: 16)),
           ),
         ],
       ),
+    );
+  }
+
+  void _onTabChange(int index) {
+    if (index != _currentIndex) setState(() => _currentIndex = index);
+  }
+
+  void _viewPostDetails(Post post) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailScreen(postId: post.id)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     if (isLoading) {
       return Scaffold(
-        backgroundColor: colorScheme.background,
-        body: Center(child: CircularProgressIndicator(color: colorScheme.primary)),
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                color: Color(0xFF0632A1),
+                strokeWidth: 3,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Loading profile...',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
+
     if (errorMessage != null) {
       return Scaffold(
-        backgroundColor: colorScheme.background,
-        body: Center(child: Text(errorMessage!, style: TextStyle(color: colorScheme.error, fontSize: 18))),
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 60,
+                color: Colors.red.shade400,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Failed to load profile',
+                style: TextStyle(
+                  color: Colors.grey.shade800,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 8),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _refreshProfile,
+                icon: Icon(Icons.refresh),
+                label: Text('Try Again'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF0632A1),
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      backgroundColor: colorScheme.background,
-      body: DefaultTabController(
-        length: 3,
-        child: NestedScrollView(
-          headerSliverBuilder: (context, innerBoxIsScrolled) => [
-            SliverAppBar(
-              backgroundColor: colorScheme.surface,
-              elevation: 0,
-              toolbarHeight: 70,
-              leadingWidth: 160, // Adjusted for logo only
-              leading: Center(
-                child: Image.asset(
-                  'assets/images/prologic.png',
-                  width: 150,
-                  height: 50,
-                  fit: BoxFit.contain,
-                ),
-              ),
-              actions: [
-                IconButton(
-                  icon: Icon(Icons.logout, size: 26, color: colorScheme.primary),
-                  onPressed: _logout,
-                  tooltip: 'Logout',
-                ),
-                const SizedBox(width: 8),
-              ],
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(1),
-                child: Container(height: 1, color: colorScheme.primary.withOpacity(0.2)),
-              ),
+      backgroundColor: Colors.grey.shade50,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        title: AnimatedOpacity(
+          opacity: _showAppBarTitle ? 1.0 : 0.0,
+          duration: Duration(milliseconds: 200),
+          child: Text(
+            '${user?.firstName ?? ''} ${user?.lastName ?? ''}',
+            style: TextStyle(
+              color: Color(0xFF0632A1),
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
             ),
+          ),
+        ),
+        centerTitle: true,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Icon(Icons.menu, color: Color(0xFF0632A1), size: 24),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.settings, color: Color(0xFF0632A1), size: 22),
+            onPressed: _goToSettings,
+            tooltip: 'Settings',
+          ),
+          IconButton(
+            icon: Icon(Icons.logout, color: Color(0xFF0632A1), size: 22),
+            onPressed: _logout,
+            tooltip: 'Logout',
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Container(height: 1, color: Colors.grey.shade200),
+        ),
+      ),
+      drawer: _userRole == 'ADMIN'
+          ? AdminSidebar(
+              currentIndex: _currentIndex,
+              onTabChange: _onTabChange,
+            )
+          : _userRole == 'LAB-MANAGER'
+              ? LabManagerSidebar(
+                  currentIndex: _currentIndex,
+                  onTabChange: _onTabChange,
+                )
+              : AssistantSidebar(
+                  currentIndex: _currentIndex,
+                  onTabChange: _onTabChange,
+                ),
+      body: RefreshIndicator(
+        onRefresh: _refreshProfile,
+        color: Color(0xFF0632A1),
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            // Profile Header
             SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: colorScheme.secondary, width: 2),
-                          ),
-                          child: ClipOval(
-                            child: user?.image != null && user!.image!.isNotEmpty
-                                ? Image.network(
-                                    '${Env.userImageBaseUrl}${user!.image!}', // Updated to use Env
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => Icon(
-                                      Icons.person,
-                                      size: 50,
-                                      color: colorScheme.onSurface,
-                                    ),
-                                  )
-                                : Image.asset(
-                                    'assets/images/default_avatar.png',
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                  ),
-                          ),
-                        ),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              child: Container(
+                color: Colors.white,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Profile Image and Stats
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Profile Image
+                          Stack(
                             children: [
-                              _buildStatColumn('Posts', postCount.toString(), colorScheme),
-                              _buildStatColumn('Saved', savedCount.toString(), colorScheme),
-                              _buildStatColumn('Likes', likesCount.toString(), colorScheme),
+                              Container(
+                                width: 100,
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [Color(0xFF0632A1), Color(0xFF3D6DFF)],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Color(0xFF0632A1).withOpacity(0.3),
+                                      blurRadius: 10,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                padding: EdgeInsets.all(3),
+                                child: ClipOval(
+                                  child: user?.image != null && user!.image!.isNotEmpty
+                                      ? Image.network(
+                                          '${Env.userImageBaseUrl}${user!.image!}',
+                                          width: 94,
+                                          height: 94,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => Container(
+                                            color: Colors.grey.shade200,
+                                            child: Icon(
+                                              Icons.person,
+                                              size: 40,
+                                              color: Colors.grey.shade400,
+                                            ),
+                                          ),
+                                        )
+                                      : Image.asset(
+                                          'assets/images/default_avatar.png',
+                                          width: 94,
+                                          height: 94,
+                                          fit: BoxFit.cover,
+                                        ),
+                                ),
+                              ),
+                              if (user?.isEnabled == "Active")
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    padding: EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 2),
+                                    ),
+                                    child: Icon(
+                                      Icons.check,
+                                      color: Colors.white,
+                                      size: 12,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${user?.firstName ?? 'Unknown'} ${user?.lastName ?? ''}',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
-                        ),
-                        if (user?.bio != null && user!.bio!.isNotEmpty)
-                          Padding(
-                            padding: EdgeInsets.only(top: 4),
-                            child: Text(
-                              user!.bio!,
-                              style: TextStyle(fontSize: 14, color: colorScheme.onSurface.withOpacity(0.8)),
+                          SizedBox(width: 20),
+                          
+                          // Stats
+                          Expanded(
+                            child: Container(
+                              padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  _buildStatColumn('Posts', postCount.toString()),
+                                  _buildVerticalDivider(),
+                                  _buildStatColumn('Saved', savedCount.toString()),
+                                  _buildVerticalDivider(),
+                                  _buildStatColumn('Likes', likesCount.toString()),
+                                ],
+                              ),
                             ),
                           ),
-                        SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(_getGenderIcon(user?.gender), color: colorScheme.secondary, size: 16),
-                            SizedBox(width: 4),
-                            Text(
-                              user?.gender ?? 'N/A',
-                              style: TextStyle(fontSize: 14, color: colorScheme.onSurface.withOpacity(0.8)),
-                            ),
-                            SizedBox(width: 12),
-                            Text(
-                              _getFlagEmoji(user?.nationality),
-                              style: TextStyle(fontSize: 16),
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              user?.nationality ?? 'N/A',
-                              style: TextStyle(fontSize: 14, color: colorScheme.onSurface.withOpacity(0.8)),
-                            ),
-                          ],
-                        ),
-                        if (user?.isEnabled == "Active")
-                          Padding(
-                            padding: EdgeInsets.only(top: 8),
-                            child: Row(
-                              children: [
-                                Icon(Icons.check_circle, color: colorScheme.primary, size: 16),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Active',
-                                  style: TextStyle(fontSize: 14, color: colorScheme.primary),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if ((user?.cv != null) || (user?.github != null) || (user?.linkedin != null))
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (user?.cv != null) _buildSocialLink(FontAwesomeIcons.solidFileAlt, 'CV', Colors.blueAccent, colorScheme),
-                          if (user?.github != null) _buildSocialLink(FontAwesomeIcons.github, 'GitHub', Colors.grey[800]!, colorScheme),
-                          if (user?.linkedin != null) _buildSocialLink(FontAwesomeIcons.linkedin, 'LinkedIn', Colors.blue[700]!, colorScheme),
                         ],
                       ),
                     ),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () => _showAboutDialog(context),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colorScheme.primary,
-                              foregroundColor: colorScheme.onPrimary,
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    
+                    // User Info
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Name
+                          Text(
+                            '${user?.firstName ?? 'Unknown'} ${user?.lastName ?? ''}',
+                            style: TextStyle(
+                              fontSize: 22, 
+                              fontWeight: FontWeight.bold, 
+                              color: Colors.grey.shade800
                             ),
-                            child: Text('About', style: TextStyle(fontSize: 16)),
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EditProfileScreen(user: user!))),
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              side: BorderSide(color: colorScheme.primary, width: 2),
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ).animate().fade(duration: 400.ms).slideY(begin: 0.2, end: 0),
+                          
+                          // Bio
+                          if (user?.bio != null && user!.bio!.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(top: 8, bottom: 4),
+                              child: Text(
+                                user!.bio!,
+                                style: TextStyle(
+                                  fontSize: 14, 
+                                  color: Colors.grey.shade600,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ).animate().fade(duration: 500.ms, delay: 100.ms).slideY(begin: 0.2, end: 0),
+                          
+                          // User Details
+                          Container(
+                            margin: EdgeInsets.symmetric(vertical: 12),
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey.shade200),
                             ),
-                            child: Text(
-                              'Edit Profile',
-                              style: TextStyle(fontSize: 16, color: colorScheme.primary),
+                            child: Column(
+                              children: [
+                                // Gender & Nationality
+                                Row(
+                                  children: [
+                                    Icon(_getGenderIcon(user?.gender), 
+                                      color: Color(0xFF0632A1), size: 16),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      user?.gender ?? 'N/A',
+                                      style: TextStyle(
+                                        fontSize: 14, 
+                                        color: Colors.grey.shade700,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    SizedBox(width: 16),
+                                    Text(
+                                      _getFlagEmoji(user?.nationality),
+                                      style: TextStyle(fontSize: 16),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      user?.nationality ?? 'N/A',
+                                      style: TextStyle(
+                                        fontSize: 14, 
+                                        color: Colors.grey.shade700,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                
+                                // Email
+                                if (user?.email != null)
+                                  Padding(
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.email_outlined, 
+                                          color: Color(0xFF0632A1), size: 16),
+                                        SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            user!.email!,
+                                            style: TextStyle(
+                                              fontSize: 14, 
+                                              color: Colors.grey.shade700,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
-                        ),
-                      ],
+                          ).animate().fade(duration: 600.ms, delay: 200.ms),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _SliverAppBarDelegate(
-                TabBar(
-                  labelColor: colorScheme.primary,
-                  unselectedLabelColor: colorScheme.onSurface.withOpacity(0.6),
-                  indicatorColor: colorScheme.primary,
-                  tabs: [
-                    Tab(icon: Icon(FontAwesomeIcons.pen, size: 18), text: 'Posts'),
-                    Tab(icon: Icon(FontAwesomeIcons.heart, size: 18), text: 'Liked'),
-                    Tab(icon: Icon(FontAwesomeIcons.bookmark, size: 18), text: 'Saved'),
+                    
+                    // Social Links
+                    if ((user?.cv != null) || (user?.github != null) || (user?.linkedin != null))
+                      Container(
+                        margin: EdgeInsets.fromLTRB(20, 0, 20, 16),
+                        padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            if (user?.cv != null) 
+                              _buildSocialLink(FontAwesomeIcons.fileLines, 'CV', Colors.blue.shade700),
+                            if (user?.github != null) 
+                              _buildSocialLink(FontAwesomeIcons.github, 'GitHub', Colors.black87),
+                            if (user?.linkedin != null) 
+                              _buildSocialLink(FontAwesomeIcons.linkedin, 'LinkedIn', Colors.blue.shade800),
+                          ],
+                        ),
+                      ).animate().fade(duration: 700.ms, delay: 300.ms),
+                    
+                    // Action Buttons
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(20, 0, 20, 24),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _showAboutDialog(context),
+                              icon: Icon(Icons.info_outline, size: 18),
+                              label: Text('About', style: TextStyle(fontSize: 15)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Color(0xFF0632A1),
+                                foregroundColor: Colors.white,
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                elevation: 2,
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => Navigator.push(
+                                context, 
+                                MaterialPageRoute(builder: (_) => EditProfileScreen(user: user!))
+                              ).then((_) => _refreshProfile()),
+                              icon: Icon(Icons.edit_outlined, size: 18),
+                              label: Text('Edit Profile', style: TextStyle(fontSize: 15)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Color(0xFF0632A1),
+                                side: BorderSide(color: Color(0xFF0632A1), width: 1.5),
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ).animate().fade(duration: 800.ms, delay: 400.ms),
                   ],
                 ),
               ),
             ),
+            
+            // Tab Bar
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _SliverAppBarDelegate(
+                TabBar(
+                  controller: _tabController,
+                  labelColor: Color(0xFF0632A1),
+                  unselectedLabelColor: Colors.grey.shade600,
+                  indicatorColor: Color(0xFF0632A1),
+                  indicatorWeight: 3,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  labelStyle: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                  tabs: [
+                    Tab(
+                      icon: Icon(FontAwesomeIcons.images, size: 16),
+                      text: 'Posts',
+                    ),
+                    Tab(
+                      icon: Icon(FontAwesomeIcons.heart, size: 16),
+                      text: 'Liked',
+                    ),
+                    Tab(
+                      icon: Icon(FontAwesomeIcons.bookmark, size: 16),
+                      text: 'Saved',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            // Tab Content
+            SliverFillRemaining(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildPostGrid(userPosts),
+                  _buildPostGrid(likedPosts),
+                  _buildPostGrid(savedPosts),
+                ],
+              ),
+            ),
           ],
-          body: TabBarView(
-            children: [
-              _buildPostGrid(userPosts, colorScheme),
-              _buildPostGrid(likedPosts, colorScheme),
-              _buildPostGrid(savedPosts, colorScheme),
-            ],
-          ),
         ),
+      ),
+      bottomNavigationBar: AssistantNavbar(
+        currentIndex: _currentIndex,
+        onTabChange: _onTabChange,
+        unreadMessageCount: 0,
+        unreadNotificationCount: 0,
       ),
     );
   }
 
-  Widget _buildStatColumn(String label, String value, ColorScheme colorScheme) {
+  Widget _buildVerticalDivider() {
+    return Container(
+      height: 30,
+      width: 1,
+      color: Colors.grey.shade300,
+    );
+  }
+
+  Widget _buildStatColumn(String label, String value) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           value,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
+          style: TextStyle(
+            fontSize: 18, 
+            fontWeight: FontWeight.bold, 
+            color: Color(0xFF0632A1)
+          ),
         ),
+        SizedBox(height: 4),
         Text(
           label,
-          style: TextStyle(fontSize: 14, color: colorScheme.onSurface.withOpacity(0.8)),
+          style: TextStyle(
+            fontSize: 13, 
+            color: Colors.grey.shade600,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildSocialLink(IconData icon, String label, Color color, ColorScheme colorScheme) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 12),
-      child: GestureDetector(
-        onTap: () {},
-        child: Row(
+  Widget _buildSocialLink(IconData icon, String label, Color color) {
+    return InkWell(
+      onTap: () {},
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, color: color, size: 20),
-            SizedBox(width: 4),
+            SizedBox(height: 4),
             Text(
               label,
-              style: TextStyle(fontSize: 14, color: colorScheme.onSurface, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 12, 
+                color: Colors.grey.shade700, 
+                fontWeight: FontWeight.w500
+              ),
             ),
           ],
         ),
@@ -423,60 +787,189 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value, ColorScheme colorScheme) {
+  Widget _buildInfoRow(IconData icon, String label, String value) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
-          Icon(icon, color: colorScheme.secondary, size: 18),
-          SizedBox(width: 12),
-          Text(
-            '$label:',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: colorScheme.onSurface),
-          ),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(fontSize: 14, color: colorScheme.onSurface.withOpacity(0.8)),
+          Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Color(0xFF0632A1).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
             ),
+            child: Icon(icon, color: Color(0xFF0632A1), size: 16),
+          ),
+          SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12, 
+                  fontWeight: FontWeight.w500, 
+                  color: Colors.grey.shade500
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14, 
+                  fontWeight: FontWeight.w500, 
+                  color: Colors.grey.shade800
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildPostGrid(List<Post> posts, ColorScheme colorScheme) {
+  Widget _buildPostGrid(List<Post> posts) {
     if (posts.isEmpty) {
       return Center(
-        child: Text(
-          'No posts yet',
-          style: TextStyle(fontSize: 16, color: colorScheme.onSurface.withOpacity(0.6)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Color(0xFF0632A1).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                posts == userPosts 
+                    ? FontAwesomeIcons.images 
+                    : posts == likedPosts 
+                        ? FontAwesomeIcons.heart 
+                        : FontAwesomeIcons.bookmark,
+                size: 30,
+                color: Color(0xFF0632A1),
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              posts == userPosts 
+                  ? 'No posts yet' 
+                  : posts == likedPosts 
+                      ? 'No liked posts' 
+                      : 'No saved posts',
+              style: TextStyle(
+                fontSize: 16, 
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade800,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              posts == userPosts 
+                  ? 'Share your first post!' 
+                  : posts == likedPosts 
+                      ? 'Like posts to see them here' 
+                      : 'Save posts for later viewing',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
         ),
       );
     }
+
     return GridView.builder(
-      padding: EdgeInsets.all(4),
+      padding: EdgeInsets.all(8),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
       ),
       itemCount: posts.length,
       itemBuilder: (context, index) {
         final post = posts[index];
-        final imageUrl = post.images.isNotEmpty ? '${Env.imageBaseUrl}${post.images.first}' : 'https://via.placeholder.com/150'; // Updated to use Env
-        debugPrint('Loading image: $imageUrl');
-        return Image.network(
-          imageUrl,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            debugPrint('Image load failed: $imageUrl, Error: $error');
-            return Container(
-              color: colorScheme.surface,
-              child: Icon(Icons.broken_image, color: colorScheme.onSurface.withOpacity(0.6)),
-            );
-          },
+        return GestureDetector(
+          onTap: () => _viewPostDetails(post),
+          child: Hero(
+            tag: 'post_${post.id}',
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: Colors.grey.shade200,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    post.images.isNotEmpty
+                        ? Image.network(
+                            '${Env.imageBaseUrl}${post.images.first}',
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.grey.shade200,
+                                child: Icon(
+                                  Icons.broken_image,
+                                  color: Colors.grey.shade400,
+                                  size: 30,
+                                ),
+                              );
+                            },
+                          )
+                        : Container(
+                            color: Colors.grey.shade200,
+                            child: Icon(
+                              Icons.description,
+                              color: Colors.grey.shade400,
+                              size: 30,
+                            ),
+                          ),
+                    if (post.likes.isNotEmpty)
+                      Positioned(
+                        bottom: 8,
+                        right: 8,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.favorite,
+                                color: Colors.white,
+                                size: 12,
+                              ),
+                              SizedBox(width: 2),
+                              Text(
+                                '${post.likes.length}',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         );
       },
     );
@@ -496,7 +989,7 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
-      color: Theme.of(context).colorScheme.background,
+      color: Colors.white,
       child: _tabBar,
     );
   }

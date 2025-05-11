@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:pte_mobile/models/room.dart'; // Import your Room model
-import 'package:pte_mobile/services/room_service.dart'; // Import your RoomService
-import 'package:flutter_animate/flutter_animate.dart'; // For animations
+import 'package:pte_mobile/models/room.dart';
+import 'package:pte_mobile/services/room_service.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class CreateRoomScreen extends StatefulWidget {
   @override
@@ -29,7 +29,7 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Room created successfully')),
         );
-        Navigator.pop(context); // Go back to the previous screen
+        Navigator.pop(context);
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to create room: $e')),
@@ -53,15 +53,27 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
                 bottomRight: Radius.circular(30),
               ),
             ),
-            child: Center(
-              child: Text(
-                'Create Room',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+            child: Stack(
+              children: [
+                Center(
+                  child: Text(
+                    'Create Room',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
                 ),
-              ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                Positioned(
+                  left: 16,
+                  top: MediaQuery.of(context).padding.top + 16,
+                  child: IconButton(
+                    icon: Icon(Icons.chevron_left, color: Colors.white, size: 32),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -145,11 +157,11 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
                           'Create Room',
                           style: TextStyle(
                             fontSize: 16,
-                            color: Colors.white, // Set font color to white
+                            color: Colors.white,
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF0632A1), // Button background color
+                          backgroundColor: Color(0xFF0632A1),
                           padding: EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -167,7 +179,6 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
     );
   }
 
-  // Card Widget
   Widget _buildCard({required Widget child}) {
     return Container(
       decoration: BoxDecoration(

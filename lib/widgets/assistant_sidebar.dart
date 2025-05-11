@@ -1,13 +1,28 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:line_icons/line_icons.dart';
+import 'package:pte_mobile/screens/labmanager/request_lab.dart';
 import 'package:pte_mobile/screens/labmanager/requests_by_user_id.dart';
+import 'package:pte_mobile/screens/room/all_rooms.dart';
 import 'package:pte_mobile/screens/room/room_reservation_screen.dart';
+import 'package:pte_mobile/screens/room/room_reservation_calendar_screen.dart';
+import 'package:pte_mobile/screens/room/rooms_dashboard.dart';
+import 'package:pte_mobile/screens/users/user_reservation_screen.dart';
+import 'package:pte_mobile/widgets/theme_toggle_button.dart';
+import 'package:pte_mobile/screens/profile_screen.dart';
+import 'package:pte_mobile/screens/edit_profile_screen.dart';
+import 'package:pte_mobile/services/user_service.dart';
+import 'package:pte_mobile/models/user.dart';
+import 'package:pte_mobile/screens/users/all_users.dart';
+import 'package:pte_mobile/screens/users/user_dashboard.dart';
+import 'package:pte_mobile/screens/leave/leave_request_screen.dart';
+import 'package:pte_mobile/screens/leave/my_leave_requests_screen.dart';
+import 'package:pte_mobile/screens/leave/all_leave_requests.dart';
+import 'package:pte_mobile/screens/leave/leave_dashboard.dart'; // Added import
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../theme/theme.dart';
+import '../../config/env.dart';
 
-class AssistantSidebar extends StatelessWidget {
+class AssistantSidebar extends StatefulWidget {
   final int currentIndex;
   final Function(int) onTabChange;
 
@@ -17,177 +32,558 @@ class AssistantSidebar extends StatelessWidget {
     required this.onTabChange,
   }) : super(key: key);
 
-  void _navigateToPage(BuildContext context, int index) {
-    switch (index) {
-      case 0:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => RoomReservationScreen(
-              onEventCreated: (event) {}, // Placeholder
-              events: [], // Placeholder
-            ),
-          ),
-        );
-        break;
-      case 1:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const RequestsByUserId()),
-        );
-        break;
+  @override
+  _AssistantSidebarState createState() => _AssistantSidebarState();
+}
+
+class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerProviderStateMixin {
+  bool _isUsersExpanded = false;
+  bool _isRoomsExpanded = false;
+  bool _isLabsExpanded = false;
+  bool _isLeaveExpanded = false;
+  bool _isProfileExpanded = false;
+  late AnimationController _animationController;
+
+  final Color primaryBlue = const Color(0xFF2563EB);
+  final Color lightBlue = const Color(0xFFEFF6FF);
+  final Color darkBlue = const Color(0xFF1E40AF);
+  final UserService _userService = UserService();
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    // Adjust index ranges for expanded sections
+    if (widget.currentIndex >= 0 && widget.currentIndex <= 2) {
+      _isUsersExpanded = true;
+    } else if (widget.currentIndex >= 3 && widget.currentIndex <= 6) {
+      _isRoomsExpanded = true;
+    } else if (widget.currentIndex >= 7 && widget.currentIndex <= 8) {
+      _isLabsExpanded = true;
+    } else if (widget.currentIndex >= 9 && widget.currentIndex <= 12) { // Updated range for Leave
+      _isLeaveExpanded = true;
+    } else if (widget.currentIndex >= 13 && widget.currentIndex <= 14) { // Shifted range for Profile
+      _isProfileExpanded = true;
     }
-    onTabChange(index);
+  }
+
+  @override
+  void didUpdateWidget(AssistantSidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentIndex != widget.currentIndex) {
+      setState(() {
+        _isUsersExpanded = widget.currentIndex >= 0 && widget.currentIndex <= 2;
+        _isRoomsExpanded = widget.currentIndex >= 3 && widget.currentIndex <= 6;
+        _isLabsExpanded = widget.currentIndex >= 7 && widget.currentIndex <= 8;
+        _isLeaveExpanded = widget.currentIndex >= 9 && widget.currentIndex <= 12; // Updated range
+        _isProfileExpanded = widget.currentIndex >= 13 && widget.currentIndex <= 14; // Shifted range
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _navigateToPage(BuildContext context, Widget page, int index) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => page),
+    );
+    if (result is int) {
+      widget.onTabChange(result);
+    }
+  }
+
+  Future<void> _navigateToEditProfile(BuildContext context, int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId');
+      if (userId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User ID not found. Please log in again.')),
+        );
+        return;
+      }
+
+      final userData = await _userService.getUserById(userId);
+      final user = User.fromJson(userData);
+      await _navigateToPage(context, EditProfileScreen(user: user), index);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load user data: $e')),
+      );
+    }
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = lightColorScheme;
-
     return Drawer(
+      width: 320,
       backgroundColor: Colors.transparent,
       elevation: 0,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(right: Radius.circular(20)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: primaryBlue.withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(context),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                  children: [
+                    _buildNavItem(
+                      context,
+                      icon: LineIcons.users,
+                      title: 'Users',
+                      isExpanded: _isUsersExpanded,
+                      onTap: () => setState(() {
+                        _isUsersExpanded = !_isUsersExpanded;
+                        if (_isUsersExpanded) {
+                          _isRoomsExpanded = false;
+                          _isLabsExpanded = false;
+                          _isLeaveExpanded = false;
+                          _isProfileExpanded = false;
+                        }
+                      }),
+                      children: [
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.user,
+                          title: 'See Users',
+                          isSelected: widget.currentIndex == 0,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const AllUsersScreen(),
+                            0,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.calendarCheck,
+                          title: 'Book a Technician',
+                          isSelected: widget.currentIndex == 1,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const UserReservationScreen(),
+                            1,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.barChart,
+                          title: 'Users Dashboard',
+                          isSelected: widget.currentIndex == 2,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const UserDashboardScreen(),
+                            2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildNavItem(
+                      context,
+                      icon: LineIcons.building,
+                      title: 'Rooms',
+                      isExpanded: _isRoomsExpanded,
+                      onTap: () => setState(() {
+                        _isRoomsExpanded = !_isRoomsExpanded;
+                        if (_isRoomsExpanded) {
+                          _isUsersExpanded = false;
+                          _isLabsExpanded = false;
+                          _isLeaveExpanded = false;
+                          _isProfileExpanded = false;
+                        }
+                      }),
+                      children: [
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.calendar,
+                          title: 'See Calendar',
+                          isSelected: widget.currentIndex == 3,
+                          onTap: () => _navigateToPage(
+                            context,
+                            RoomReservationCalendarScreen(),
+                            3,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.book,
+                          title: 'Reserve Room',
+                          isSelected: widget.currentIndex == 4,
+                          onTap: () => _navigateToPage(
+                            context,
+                            RoomReservationScreen(
+                              onEventCreated: (event) {},
+                              events: [],
+                            ),
+                            4,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.cog,
+                          title: 'Manage Rooms',
+                          isSelected: widget.currentIndex == 5,
+                          onTap: () => _navigateToPage(
+                            context,
+                            AllRoomsScreen(),
+                            5,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.barChart,
+                          title: 'Rooms Dashboard',
+                          isSelected: widget.currentIndex == 6,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const RoomsDashboardScreen(),
+                            6,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildNavItem(
+                      context,
+                      icon: LineIcons.flask,
+                      title: 'Labs',
+                      isExpanded: _isLabsExpanded,
+                      onTap: () => setState(() {
+                        _isLabsExpanded = !_isLabsExpanded;
+                        if (_isLabsExpanded) {
+                          _isUsersExpanded = false;
+                          _isRoomsExpanded = false;
+                          _isLeaveExpanded = false;
+                          _isProfileExpanded = false;
+                        }
+                      }),
+                      children: [
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.plusCircle,
+                          title: 'Request Lab',
+                          isSelected: widget.currentIndex == 7,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const RequestLabScreen(),
+                            7,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.list,
+                          title: 'Check My Requests',
+                          isSelected: widget.currentIndex == 8,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const RequestsByUserId(),
+                            8,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildNavItem(
+                      context,
+                      icon: LineIcons.calendarCheck,
+                      title: 'Leave',
+                      isExpanded: _isLeaveExpanded,
+                      onTap: () => setState(() {
+                        _isLeaveExpanded = !_isLeaveExpanded;
+                        if (_isLeaveExpanded) {
+                          _isUsersExpanded = false;
+                          _isRoomsExpanded = false;
+                          _isLabsExpanded = false;
+                          _isProfileExpanded = false;
+                        }
+                      }),
+                      children: [
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.plusCircle,
+                          title: 'Leave Request',
+                          isSelected: widget.currentIndex == 9,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const LeaveRequestScreen(),
+                            9,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.list,
+                          title: 'My Leave Requests',
+                          isSelected: widget.currentIndex == 10,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const MyLeaveRequestsScreen(),
+                            10,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.eye,
+                          title: 'All Leave Requests',
+                          isSelected: widget.currentIndex == 11,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const AllLeaveRequestsScreen(),
+                            11,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.barChart,
+                          title: 'Leave Dashboard',
+                          isSelected: widget.currentIndex == 12,
+                          onTap: () => _navigateToPage(
+                            context,
+                            const LeaveDashboardScreen(),
+                            12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildNavItem(
+                      context,
+                      icon: LineIcons.user,
+                      title: 'Profile',
+                      isExpanded: _isProfileExpanded,
+                      onTap: () => setState(() {
+                        _isProfileExpanded = !_isProfileExpanded;
+                        if (_isProfileExpanded) {
+                          _isUsersExpanded = false;
+                          _isRoomsExpanded = false;
+                          _isLabsExpanded = false;
+                          _isLeaveExpanded = false;
+                        }
+                      }),
+                      children: [
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.userCircle,
+                          title: 'See Profile',
+                          isSelected: widget.currentIndex == 13,
+                          onTap: () => _navigateToPage(
+                            context,
+                            ProfileScreen(),
+                            13,
+                          ),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.edit,
+                          title: 'Edit Profile',
+                          isSelected: widget.currentIndex == 14,
+                          onTap: () => _navigateToEditProfile(context, 14),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildThemeToggle(context),
+                  ],
+                ),
+              ),
+              _buildLogoutButton(context),
+            ],
+          ),
+        ),
       ),
-      child: Stack(
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            primaryBlue,
+            darkBlue,
+          ],
+        ),
+      ),
+      child: FutureBuilder<Map<String, String?>>(
+        future: _getUserInfo(),
+        builder: (context, snapshot) {
+          final userName = snapshot.data?['userName'] ?? 'User';
+          final userImage = snapshot.data?['userImage'];
+
+          return Column(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.8),
+                    width: 3,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 15,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  backgroundImage: userImage != null
+                      ? NetworkImage('${Env.userImageBaseUrl}$userImage')
+                      : null,
+                  child: userImage == null
+                      ? Icon(
+                          Icons.person,
+                          size: 40,
+                          color: Colors.white,
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                userName,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: 0.5,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: const Text(
+                  'Your Dashboard',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildNavItem(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required bool isExpanded,
+    required VoidCallback onTap,
+    required List<Widget> children,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isExpanded ? lightBlue : Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: isExpanded
+            ? [
+                BoxShadow(
+                  color: primaryBlue.withOpacity(0.1),
+                  blurRadius: 10,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
+      child: Column(
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                color: colorScheme.surface.withOpacity(0.85),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(
+                      icon,
+                      size: 26,
+                      color: isExpanded ? primaryBlue : Colors.black87,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: isExpanded ? primaryBlue : Colors.black87,
+                        ),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.25 : 0,
+                      duration: const Duration(milliseconds: 300),
+                      child: Icon(
+                        Icons.chevron_right,
+                        size: 24,
+                        color: isExpanded ? primaryBlue : Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-          SafeArea(
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [colorScheme.primary.withOpacity(0.15), Colors.transparent],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(LineIcons.rocket, color: colorScheme.primary, size: 28),
-                      const SizedBox(width: 8),
-                      Text(
-                        'PTE Hub',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: colorScheme.primary,
-                          letterSpacing: 1.1,
-                        ),
-                      ),
-                    ],
-                  ).animate().fadeIn(duration: 400.ms).scale(delay: 100.ms),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    children: [
-                      _buildSidebarItem(
-                        context,
-                        index: 0,
-                        icon: LineIcons.building,
-                        text: 'Rooms',
-                        isSelected: currentIndex == 0,
-                        onTap: () => _navigateToPage(context, 0),
-                      ),
-                      _buildSidebarItem(
-                        context,
-                        index: 1,
-                        icon: LineIcons.flask,
-                        text: 'Labs',
-                        isSelected: currentIndex == 1,
-                        onTap: () => _navigateToPage(context, 1),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(
-                  color: colorScheme.onSurface.withOpacity(0.2),
-                  thickness: 1,
-                  height: 1,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  child: FutureBuilder<Map<String, String?>>(
-                    future: _getUserInfo(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const CircularProgressIndicator();
-                      }
-                      final userName = snapshot.data?['userName'] ?? 'User';
-                      final userImage = snapshot.data?['userImage'];
-
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surface.withOpacity(0.9),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: colorScheme.primary.withOpacity(0.15),
-                              blurRadius: 6,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: colorScheme.primary.withOpacity(0.25),
-                                    blurRadius: 8,
-                                    spreadRadius: 1,
-                                  ),
-                                ],
-                              ),
-                              child: CircleAvatar(
-                                radius: 24,
-                                backgroundImage: userImage != null
-                                    ? NetworkImage(userImage)
-                                    : null,
-                                child: userImage == null
-                                    ? Icon(
-                                        Icons.person,
-                                        size: 24,
-                                        color: colorScheme.onSurface.withOpacity(0.6),
-                                      )
-                                    : null,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                userName,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: colorScheme.onSurface,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ).animate().fadeIn(duration: 400.ms).scale(delay: 200.ms);
-                    },
-                  ),
-                ),
-              ],
+          ClipRect(
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              child: isExpanded
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 16),
+                      child: Column(children: children),
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
         ],
@@ -195,56 +591,100 @@ class AssistantSidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildSidebarItem(
+  Widget _buildSubNavItem(
     BuildContext context, {
-    required int index,
     required IconData icon,
-    required String text,
+    required String title,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    final colorScheme = lightColorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? colorScheme.primary.withOpacity(0.1) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: colorScheme.primary.withOpacity(0.15),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : [],
-          ),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 24,
-                color: isSelected ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.7),
-              ).animate().scale(duration: 200.ms),
-              const SizedBox(width: 12),
-              Text(
-                text,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.7),
+    return Container(
+      margin: const EdgeInsets.only(left: 24, right: 16, bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? Colors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: primaryBlue.withOpacity(0.1),
+                  blurRadius: 8,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 2),
                 ),
-              ),
-            ],
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 22,
+                  color: isSelected ? primaryBlue : Colors.black54,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected ? primaryBlue : Colors.black87,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: primaryBlue,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
-      ).animate().fadeIn(duration: 300.ms).slideX(delay: 100.ms * index),
+      ),
+    );
+  }
+
+  Widget _buildLogoutButton(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      child: ElevatedButton.icon(
+        onPressed: () => _logout(context),
+        icon: const Icon(
+          LineIcons.alternateSignOut,
+          size: 24,
+        ),
+        label: const Text(
+          'Log Out',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFEF4444),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 4,
+          shadowColor: const Color(0xFFEF4444).withOpacity(0.4),
+        ),
+      ),
     );
   }
 
@@ -254,5 +694,45 @@ class AssistantSidebar extends StatelessWidget {
       'userName': prefs.getString('userName'),
       'userImage': prefs.getString('userImage'),
     };
+  }
+
+  Widget _buildThemeToggle(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(
+                  LineIcons.sun,
+                  size: 26,
+                  color: Colors.black87,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    'Theme',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                const ThemeToggleButton(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -26,6 +26,7 @@ class User {
   final String? github;
   final String? linkedin;
   final String? cv;
+  final bool? external; // Made nullable to debug the issue
 
   User({
     required this.id,
@@ -52,6 +53,7 @@ class User {
     this.github,
     this.linkedin,
     this.cv,
+    this.external, // Removed default value since it's nullable
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -80,11 +82,13 @@ class User {
       }
 
       bool? _parseBool(dynamic value) {
-        if (value == null) return null;
+        if (value == null) return null; // Return null if value is null
         if (value is bool) return value;
         if (value is String) {
           return value.toLowerCase() == 'true';
         }
+        // Handle unexpected types by returning null
+        debugPrint('Unexpected type for boolean field: $value (${value.runtimeType})');
         return null;
       }
 
@@ -115,6 +119,7 @@ class User {
         github: _parseString(json['github']),
         linkedin: _parseString(json['linkedin']),
         cv: _parseString(json['cv']),
+        external: _parseBool(json['external']), // Let it be null for now
       );
     } catch (e, stack) {
       debugPrint('Error parsing User JSON: $e');
@@ -150,11 +155,68 @@ class User {
       'github': github,
       'linkedin': linkedin,
       'cv': cv,
+      'external': external,
     };
+  }
+
+  User copyWith({
+    String? id,
+    String? matricule,
+    String? firstName,
+    String? lastName,
+    String? email,
+    List<String>? roles,
+    String? image,
+    bool? teamLeader,
+    String? phone,
+    String? nationality,
+    String? fs,
+    String? bio,
+    DateTime? birthDate,
+    String? address,
+    String? department,
+    bool? drivingLicense,
+    String? gender,
+    String? isEnabled,
+    int? experience,
+    DateTime? hiringDate,
+    String? title,
+    String? github,
+    String? linkedin,
+    String? cv,
+    bool? external,
+  }) {
+    return User(
+      id: id ?? this.id,
+      matricule: matricule ?? this.matricule,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
+      email: email ?? this.email,
+      roles: roles ?? this.roles,
+      image: image ?? this.image,
+      teamLeader: teamLeader ?? this.teamLeader,
+      phone: phone ?? this.phone,
+      nationality: nationality ?? this.nationality,
+      fs: fs ?? this.fs,
+      bio: bio ?? this.bio,
+      birthDate: birthDate ?? this.birthDate,
+      address: address ?? this.address,
+      department: department ?? this.department,
+      drivingLicense: drivingLicense ?? this.drivingLicense,
+      gender: gender ?? this.gender,
+      isEnabled: isEnabled ?? this.isEnabled,
+      experience: experience ?? this.experience,
+      hiringDate: hiringDate ?? this.hiringDate,
+      title: title ?? this.title,
+      github: github ?? this.github,
+      linkedin: linkedin ?? this.linkedin,
+      cv: cv ?? this.cv,
+      external: external ?? this.external,
+    );
   }
 
   @override
   String toString() {
-    return 'User(id: $id, name: $firstName $lastName, email: $email)';
+    return 'User(id: $id, name: $firstName $lastName, email: $email, external: $external)';
   }
 }

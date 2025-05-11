@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:pte_mobile/widgets/lab_manager_navbar.dart';
 import '../../services/messaging_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/message.dart' as message_model;
@@ -9,7 +10,8 @@ import 'messaging_screen.dart';
 import '../chat/chat_screen.dart';
 import '../../theme/theme.dart';
 import '../../providers/notification_provider.dart';
-import '../../config/env.dart'; // Added import for Env
+import '../../config/env.dart';
+import '../settings_screen.dart'; // Import the Settings screen
 
 class HomeMessagesScreen extends StatefulWidget {
   const HomeMessagesScreen({Key? key}) : super(key: key);
@@ -27,8 +29,9 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
   List<Map<String, dynamic>> _filteredConversations = [];
   bool _isLoading = true;
   String? _currentUserId;
+  String? _userRole;
   String _searchText = '';
-  int _currentIndex = 3; // Index for Messages tab
+  int _currentIndex = 1; // Index for Chat tab (not Settings)
 
   @override
   bool get wantKeepAlive => true;
@@ -36,7 +39,6 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
   @override
   void initState() {
     super.initState();
-    // Reset unreadMessageCount when the HomeMessagesScreen is opened
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<NotificationProvider>(context, listen: false).resetMessageCount();
     });
@@ -48,8 +50,27 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
       setState(() {
         _currentIndex = index;
       });
-      if (index == 3) {
-        Provider.of<NotificationProvider>(context, listen: false).resetMessageCount();
+      // Navigate based on the tab index
+      switch (index) {
+        case 0: // Home
+          Navigator.pushReplacementNamed(context, '/feed');
+          break;
+        case 1: // Virt Lab (for Lab Manager) or Messages (for Assistant)
+          if (_userRole == 'LAB-MANAGER') {
+            Navigator.pushReplacementNamed(context, '/lab-home');
+          } else {
+            // Already on Messages screen, do nothing
+          }
+          break;
+        case 2: // Chat (Messages)
+          // Already on Messages screen, do nothing
+          break;
+        case 3: // Settings
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const SettingsScreen()),
+          );
+          break;
       }
     }
   }
@@ -57,6 +78,7 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
   Future<void> _fetchData() async {
     final prefs = await SharedPreferences.getInstance();
     _currentUserId = prefs.getString('userId');
+    _userRole = prefs.getString('userRole');
 
     if (_currentUserId != null) {
       try {
@@ -523,12 +545,19 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
       ),
       bottomNavigationBar: Consumer<NotificationProvider>(
         builder: (context, notificationProvider, child) {
-          return AssistantNavbar(
-            currentIndex: _currentIndex,
-            onTabChange: _onTabChange,
-            unreadMessageCount: notificationProvider.unreadMessageCount,
-            unreadNotificationCount: notificationProvider.unreadActivityCount,
-          );
+          return _userRole == 'LAB-MANAGER'
+              ? LabManagerNavbar(
+                  currentIndex: _currentIndex,
+                  onTabChange: _onTabChange,
+                  unreadMessageCount: notificationProvider.unreadMessageCount,
+                  unreadNotificationCount: notificationProvider.unreadActivityCount,
+                )
+              : AssistantNavbar(
+                  currentIndex: _currentIndex,
+                  onTabChange: _onTabChange,
+                  unreadMessageCount: notificationProvider.unreadMessageCount,
+                  unreadNotificationCount: notificationProvider.unreadActivityCount,
+                );
         },
       ),
     );
