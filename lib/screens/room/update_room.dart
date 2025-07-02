@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:pte_mobile/models/room.dart'; // Import your Room model
-import 'package:pte_mobile/services/room_service.dart'; // Import your RoomService
-import 'package:pte_mobile/screens/room/all_rooms.dart'; // Import the AllRoomsScreen
-import 'package:flutter_animate/flutter_animate.dart'; // For animations
+import 'package:pte_mobile/models/room.dart';
+import 'package:pte_mobile/services/room_service.dart';
+import 'package:pte_mobile/screens/room/all_rooms.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class UpdateRoomScreen extends StatefulWidget {
   final Room room;
@@ -41,10 +41,8 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
       try {
         await _roomService.editRoom(updatedRoom.id, updatedRoom);
 
-        // Show Sweet Alert
         _showSuccessDialog(context);
 
-        // Redirect to AllRoomsScreen after a delay
         Future.delayed(Duration(seconds: 2), () {
           Navigator.pushReplacement(
             context,
@@ -61,7 +59,6 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
     }
   }
 
-  // Sweet Alert Dialog
   void _showSuccessDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -97,10 +94,9 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFF5F5F5), // Light gray background
+      backgroundColor: Color(0xFFF5F5F5),
       body: Column(
         children: [
-          // Custom Header
           Container(
             height: MediaQuery.of(context).size.height * 0.2,
             decoration: BoxDecoration(
@@ -110,19 +106,40 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
                 bottomRight: Radius.circular(40),
               ),
             ),
-            child: Center(
-              child: Text(
-                'Update Room',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AllRoomsScreen(),
+                        ),
+                      );
+                    },
+                    tooltip: 'Back to All Rooms',
+                  ),
+                  Text(
+                    'Update Room',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                  SizedBox(width: 48), // Spacer for balance
+                ],
+              ),
             ),
           ),
-
-          // Floating Action Cards (Horizontal Scroll)
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -130,12 +147,10 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    // Horizontal Scroll for Input Fields
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
-                          // Label Card
                           _buildFloatingCard(
                             controller: _labelController,
                             label: 'Label',
@@ -148,8 +163,6 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
                             },
                           ).animate().fadeIn(duration: 500.ms).slideX(delay: 300.ms),
                           SizedBox(width: 16),
-
-                          // Location Card
                           _buildFloatingCard(
                             controller: _locationController,
                             label: 'Location',
@@ -162,8 +175,6 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
                             },
                           ).animate().fadeIn(duration: 500.ms).slideX(delay: 400.ms),
                           SizedBox(width: 16),
-
-                          // Capacity Card
                           _buildFloatingCard(
                             controller: _capacityController,
                             label: 'Capacity',
@@ -179,8 +190,6 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
                       ),
                     ),
                     SizedBox(height: 40),
-
-                    // Update Button
                     Container(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -211,7 +220,6 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
     );
   }
 
-  // Floating Card Widget
   Widget _buildFloatingCard({
     required TextEditingController controller,
     required String label,
@@ -219,7 +227,7 @@ class _UpdateRoomScreenState extends State<UpdateRoomScreen> {
     required String? Function(String?) validator,
   }) {
     return Container(
-      width: 200, // Fixed width for each card
+      width: 200,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),

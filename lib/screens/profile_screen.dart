@@ -5,16 +5,22 @@ import 'package:pte_mobile/models/post.dart';
 import 'package:pte_mobile/models/user.dart';
 import 'package:pte_mobile/screens/edit_profile_screen.dart';
 import 'package:pte_mobile/screens/feed/post_details.dart';
-import 'package:pte_mobile/screens/settings_screen.dart'; // Assuming SettingsScreen exists
+import 'package:pte_mobile/screens/settings_screen.dart';
+import 'package:pte_mobile/screens/cv/cv_management_screen.dart';
 import 'package:pte_mobile/services/post_service.dart';
 import 'package:pte_mobile/services/user_service.dart';
 import 'package:pte_mobile/widgets/assistant_navbar.dart';
+import 'package:pte_mobile/widgets/engineer_navbar.dart';
+import 'package:pte_mobile/widgets/lab_manager_navbar.dart';
+import 'package:pte_mobile/widgets/admin_navbar.dart';
+import 'package:pte_mobile/widgets/assistant_sidebar.dart';
+import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
+import 'package:pte_mobile/widgets/engineer_sidebar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/theme.dart';
 import '../config/env.dart';
-import '../widgets/assistant_sidebar.dart';
-import '../widgets/admin_sidebar.dart';
-import '../widgets/labmanager_sidebar.dart';
 
 class ProfileScreen extends StatefulWidget {
   @override
@@ -34,7 +40,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   int savedCount = 0;
   int likesCount = 0;
   String? _userRole;
-  int _currentIndex = 2; // Profile tab index
+  int _currentIndex = 2;
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
   bool _showAppBarTitle = false;
@@ -83,6 +89,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       final posts = await _postService.getUserPosts(userId);
       final saved = await _postService.getUserSavedPosts(userId);
 
+      // Filter userPosts to show only Approved posts
+      final approvedPosts = posts.where((post) => post.status == 'Approved').toList();
+
       int totalLikes = 0;
       for (var post in posts) {
         totalLikes += post.likes.length;
@@ -105,10 +114,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       if (mounted) {
         setState(() {
           user = User.fromJson(userData);
-          userPosts = posts;
+          userPosts = approvedPosts;
           savedPosts = saved;
           likedPosts = liked;
-          postCount = posts.length;
+          postCount = approvedPosts.length;
           savedCount = saved.length;
           likesCount = totalLikes;
           isLoading = false;
@@ -167,7 +176,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void _goToSettings() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => SettingsScreen()), // Navigate to SettingsScreen
+      MaterialPageRoute(builder: (_) => SettingsScreen()),
     );
   }
 
@@ -213,8 +222,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   child: Text(
                     'About ${user?.firstName ?? 'User'}',
                     style: TextStyle(
-                      fontSize: 20, 
-                      fontWeight: FontWeight.bold, 
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                       color: Colors.white
                     ),
                   ),
@@ -226,7 +235,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   children: [
                     _buildInfoRow(FontAwesomeIcons.idCard, 'Matricule', user?.matricule ?? 'N/A'),
                     _buildInfoRow(FontAwesomeIcons.phone, 'Phone', user?.phone ?? 'N/A'),
-                    _buildInfoRow(FontAwesomeIcons.building, 'Department', user?.department ?? 'N/A'),
+                    _buildInfoRow(FontAwesomeIcons.building, 'departement', user?.departement ?? 'N/A'),
                     _buildInfoRow(FontAwesomeIcons.briefcase, 'Experience', '${user?.experience ?? 'N/A'} years'),
                     _buildInfoRow(FontAwesomeIcons.envelope, 'Email', user?.email ?? 'N/A'),
                     if (user?.address != null && user!.address!.isNotEmpty)
@@ -260,6 +269,61 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       context,
       MaterialPageRoute(builder: (_) => PostDetailScreen(postId: post.id)),
     );
+  }
+
+  Future<void> _navigateToCvManagement() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('userId');
+    final token = prefs.getString('authToken');
+    if (userId != null && token != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CVManagementScreen(userId: userId, token: token),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Authentication details not found')),
+      );
+    }
+  }
+
+  Future<void> _launchURL(String? url) async {
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No URL provided')),
+      );
+      return;
+    }
+
+    String formattedUrl = url;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      formattedUrl = 'https://$url';
+    }
+
+    try {
+      final uri = Uri.parse(formattedUrl);
+      
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } else if (await canLaunch(formattedUrl)) {
+        await launch(
+          formattedUrl,
+          forceSafariVC: false,
+          forceWebView: false,
+        );
+      } else {
+        throw 'No browser available';
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to open: ${e.toString()}')),
+      );
+    }
   }
 
   @override
@@ -382,39 +446,41 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         ),
       ),
       drawer: _userRole == 'ADMIN'
-          ? AdminSidebar(
+        ? AdminSidebar(
+            currentIndex: _currentIndex,
+            onTabChange: _onTabChange,
+          )
+        : _userRole == 'LAB-MANAGER'
+          ? LabManagerSidebar(
               currentIndex: _currentIndex,
               onTabChange: _onTabChange,
             )
-          : _userRole == 'LAB-MANAGER'
-              ? LabManagerSidebar(
-                  currentIndex: _currentIndex,
-                  onTabChange: _onTabChange,
-                )
-              : AssistantSidebar(
-                  currentIndex: _currentIndex,
-                  onTabChange: _onTabChange,
-                ),
+          : _userRole == 'ENGINEER'
+            ? EngineerSidebar(
+                currentIndex: _currentIndex,
+                onTabChange: _onTabChange,
+              )
+            : AssistantSidebar(
+                currentIndex: _currentIndex,
+                onTabChange: _onTabChange,
+              ),
       body: RefreshIndicator(
         onRefresh: _refreshProfile,
         color: Color(0xFF0632A1),
         child: CustomScrollView(
           controller: _scrollController,
           slivers: [
-            // Profile Header
             SliverToBoxAdapter(
               child: Container(
                 color: Colors.white,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Profile Image and Stats
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // Profile Image
                           Stack(
                             children: [
                               Container(
@@ -481,8 +547,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             ],
                           ),
                           SizedBox(width: 20),
-                          
-                          // Stats
                           Expanded(
                             child: Container(
                               padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -506,38 +570,31 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         ],
                       ),
                     ),
-                    
-                    // User Info
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Name
                           Text(
                             '${user?.firstName ?? 'Unknown'} ${user?.lastName ?? ''}',
                             style: TextStyle(
-                              fontSize: 22, 
-                              fontWeight: FontWeight.bold, 
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
                               color: Colors.grey.shade800
                             ),
                           ).animate().fade(duration: 400.ms).slideY(begin: 0.2, end: 0),
-                          
-                          // Bio
                           if (user?.bio != null && user!.bio!.isNotEmpty)
                             Padding(
                               padding: EdgeInsets.only(top: 8, bottom: 4),
                               child: Text(
                                 user!.bio!,
                                 style: TextStyle(
-                                  fontSize: 14, 
+                                  fontSize: 14,
                                   color: Colors.grey.shade600,
                                   height: 1.4,
                                 ),
                               ),
                             ).animate().fade(duration: 500.ms, delay: 100.ms).slideY(begin: 0.2, end: 0),
-                          
-                          // User Details
                           Container(
                             margin: EdgeInsets.symmetric(vertical: 12),
                             padding: EdgeInsets.all(12),
@@ -548,16 +605,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             ),
                             child: Column(
                               children: [
-                                // Gender & Nationality
                                 Row(
                                   children: [
-                                    Icon(_getGenderIcon(user?.gender), 
+                                    Icon(_getGenderIcon(user?.gender),
                                       color: Color(0xFF0632A1), size: 16),
                                     SizedBox(width: 8),
                                     Text(
                                       user?.gender ?? 'N/A',
                                       style: TextStyle(
-                                        fontSize: 14, 
+                                        fontSize: 14,
                                         color: Colors.grey.shade700,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -571,28 +627,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                     Text(
                                       user?.nationality ?? 'N/A',
                                       style: TextStyle(
-                                        fontSize: 14, 
+                                        fontSize: 14,
                                         color: Colors.grey.shade700,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
                                   ],
-                                ),
-                                
-                                // Email
+                               ),
                                 if (user?.email != null)
                                   Padding(
                                     padding: EdgeInsets.only(top: 8),
                                     child: Row(
                                       children: [
-                                        Icon(Icons.email_outlined, 
+                                        Icon(Icons.email_outlined,
                                           color: Color(0xFF0632A1), size: 16),
                                         SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             user!.email!,
                                             style: TextStyle(
-                                              fontSize: 14, 
+                                              fontSize: 14,
                                               color: Colors.grey.shade700,
                                             ),
                                             overflow: TextOverflow.ellipsis,
@@ -607,8 +661,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         ],
                       ),
                     ),
-                    
-                    // Social Links
                     if ((user?.cv != null) || (user?.github != null) || (user?.linkedin != null))
                       Container(
                         margin: EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -621,17 +673,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            if (user?.cv != null) 
-                              _buildSocialLink(FontAwesomeIcons.fileLines, 'CV', Colors.blue.shade700),
-                            if (user?.github != null) 
-                              _buildSocialLink(FontAwesomeIcons.github, 'GitHub', Colors.black87),
-                            if (user?.linkedin != null) 
-                              _buildSocialLink(FontAwesomeIcons.linkedin, 'LinkedIn', Colors.blue.shade800),
+                            if (user?.cv != null)
+                              _buildSocialLink(FontAwesomeIcons.fileLines, 'CV', Colors.blue.shade700, onTap: _navigateToCvManagement),
+                            if (user?.github != null)
+                              _buildSocialLink(FontAwesomeIcons.github, 'GitHub', Colors.black87, onTap: () => _launchURL(user?.github)),
+                            if (user?.linkedin != null)
+                              _buildSocialLink(FontAwesomeIcons.linkedin, 'LinkedIn', Colors.blue.shade800, onTap: () => _launchURL(user?.linkedin)),
                           ],
                         ),
                       ).animate().fade(duration: 700.ms, delay: 300.ms),
-                    
-                    // Action Buttons
                     Padding(
                       padding: EdgeInsets.fromLTRB(20, 0, 20, 24),
                       child: Row(
@@ -654,7 +704,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () => Navigator.push(
-                                context, 
+                                context,
                                 MaterialPageRoute(builder: (_) => EditProfileScreen(user: user!))
                               ).then((_) => _refreshProfile()),
                               icon: Icon(Icons.edit_outlined, size: 18),
@@ -674,8 +724,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
               ),
             ),
-            
-            // Tab Bar
             SliverPersistentHeader(
               pinned: true,
               delegate: _SliverAppBarDelegate(
@@ -705,8 +753,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
               ),
             ),
-            
-            // Tab Content
             SliverFillRemaining(
               child: TabBarView(
                 controller: _tabController,
@@ -720,12 +766,33 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ],
         ),
       ),
-      bottomNavigationBar: AssistantNavbar(
-        currentIndex: _currentIndex,
-        onTabChange: _onTabChange,
-        unreadMessageCount: 0,
-        unreadNotificationCount: 0,
-      ),
+      bottomNavigationBar: _userRole == 'ADMIN'
+          ? AdminNavbar(
+              currentIndex: _currentIndex,
+              onTabChange: _onTabChange,
+              unreadMessageCount: 0,
+              unreadNotificationCount: 0,
+            )
+          : _userRole == 'LAB-MANAGER'
+              ? LabManagerNavbar(
+                  currentIndex: _currentIndex,
+                  onTabChange: _onTabChange,
+                  unreadMessageCount: 0,
+                  unreadNotificationCount: 0,
+                )
+              : _userRole == 'ENGINEER'
+                  ? EngineerNavbar(
+                      currentIndex: _currentIndex,
+                      onTabChange: _onTabChange,
+                      unreadMessageCount: 0,
+                      unreadNotificationCount: 0,
+                    )
+                  : AssistantNavbar(
+                      currentIndex: _currentIndex,
+                      onTabChange: _onTabChange,
+                      unreadMessageCount: 0,
+                      unreadNotificationCount: 0,
+                    ),
     );
   }
 
@@ -744,8 +811,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         Text(
           value,
           style: TextStyle(
-            fontSize: 18, 
-            fontWeight: FontWeight.bold, 
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
             color: Color(0xFF0632A1)
           ),
         ),
@@ -753,7 +820,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         Text(
           label,
           style: TextStyle(
-            fontSize: 13, 
+            fontSize: 13,
             color: Colors.grey.shade600,
             fontWeight: FontWeight.w500,
           ),
@@ -762,9 +829,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildSocialLink(IconData icon, String label, Color color) {
+  Widget _buildSocialLink(IconData icon, String label, Color color, {VoidCallback? onTap}) {
     return InkWell(
-      onTap: () {},
+      onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -776,8 +843,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             Text(
               label,
               style: TextStyle(
-                fontSize: 12, 
-                color: Colors.grey.shade700, 
+                fontSize: 12,
+                color: Colors.grey.shade700,
                 fontWeight: FontWeight.w500
               ),
             ),
@@ -807,8 +874,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 12, 
-                  fontWeight: FontWeight.w500, 
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                   color: Colors.grey.shade500
                 ),
               ),
@@ -816,8 +883,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               Text(
                 value,
                 style: TextStyle(
-                  fontSize: 14, 
-                  fontWeight: FontWeight.w500, 
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                   color: Colors.grey.shade800
                 ),
               ),
@@ -841,10 +908,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                posts == userPosts 
-                    ? FontAwesomeIcons.images 
-                    : posts == likedPosts 
-                        ? FontAwesomeIcons.heart 
+                posts == userPosts
+                    ? FontAwesomeIcons.images
+                    : posts == likedPosts
+                        ? FontAwesomeIcons.heart
                         : FontAwesomeIcons.bookmark,
                 size: 30,
                 color: Color(0xFF0632A1),
@@ -852,23 +919,23 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ),
             SizedBox(height: 16),
             Text(
-              posts == userPosts 
-                  ? 'No posts yet' 
-                  : posts == likedPosts 
-                      ? 'No liked posts' 
+              posts == userPosts
+                  ? 'No posts yet'
+                  : posts == likedPosts
+                      ? 'No liked posts'
                       : 'No saved posts',
               style: TextStyle(
-                fontSize: 16, 
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: Colors.grey.shade800,
               ),
             ),
             SizedBox(height: 8),
             Text(
-              posts == userPosts 
-                  ? 'Share your first post!' 
-                  : posts == likedPosts 
-                      ? 'Like posts to see them here' 
+              posts == userPosts
+                  ? 'Share your first post!'
+                  : posts == likedPosts
+                      ? 'Like posts to Show them here'
                       : 'Save posts for later viewing',
               style: TextStyle(
                 fontSize: 14,

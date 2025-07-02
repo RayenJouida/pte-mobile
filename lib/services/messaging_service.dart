@@ -5,13 +5,11 @@ import '../models/message.dart';
 import '../config/env.dart';
 
 class MessageService {
-  // Send a message to a specific user
   Future<bool> sendMessage(String receiverId, String messageText) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? senderId = prefs.getString('userId'); // Sender ID from preferences
-    String? token = prefs.getString('authToken'); // Authentication token
+    String? senderId = prefs.getString('userId');
+    String? token = prefs.getString('authToken');
 
-    // Ensure the user is authenticated
     if (senderId == null || token == null) {
       throw Exception('User not authenticated');
     }
@@ -43,10 +41,9 @@ class MessageService {
     }
   }
 
-  // Fetch messages between the current user and a recipient
   Future<List<Message>> fetchMessages(String userId, String recipientId) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('authToken'); // Authentication token
+    String? token = prefs.getString('authToken');
 
     if (token == null) {
       throw Exception('User not authenticated');
@@ -62,7 +59,6 @@ class MessageService {
       );
 
       if (response.statusCode == 200) {
-        // Parse the JSON response into a list of messages
         List<dynamic> body = json.decode(response.body);
         return body.map((json) => Message.fromJson(json)).toList();
       } else {
@@ -75,10 +71,9 @@ class MessageService {
     }
   }
 
-  // Fetch the list of users available for messaging
   Future<List<dynamic>> fetchUsers() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('authToken'); // Authentication token
+    String? token = prefs.getString('authToken');
 
     if (token == null) {
       throw Exception('User not authenticated');
@@ -94,7 +89,6 @@ class MessageService {
       );
 
       if (response.statusCode == 200) {
-        // Parse the JSON response into a list of users
         return json.decode(response.body);
       } else {
         print('Failed to fetch users: ${response.statusCode}');
@@ -125,7 +119,10 @@ class MessageService {
 
       if (response.statusCode == 200) {
         final List<dynamic> body = json.decode(response.body);
-        return body.map((json) => json as Map<String, dynamic>).toList();
+        return body.map((json) => {
+          ...json as Map<String, dynamic>,
+          'unreadCount': json['unreadCount'] ?? 0, // Ensure unreadCount is included
+        }).toList();
       } else {
         throw Exception('Failed to fetch conversations');
       }
@@ -134,7 +131,6 @@ class MessageService {
     }
   }
 
-  // New method to mark messages as read for a specific conversation
   Future<int> markMessagesAsRead(String senderId, String receiverId) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('authToken');
@@ -154,7 +150,7 @@ class MessageService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['unreadCount'] ?? 0; // Return the updated unread count
+        return data['unreadCount'] ?? 0;
       } else {
         print('Failed to mark messages as read: ${response.statusCode}');
         throw Exception('Failed to mark messages as read');

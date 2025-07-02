@@ -155,7 +155,7 @@ class _UserInfoScreenState extends State<UserInfoScreen> {
                       _buildInfoTile('Bio', _user!.bio ?? 'N/A'),
                       _buildInfoTile('Birth Date', _user!.birthDate?.toString() ?? 'N/A'),
                       _buildInfoTile('Address', _user!.address ?? 'N/A'),
-                      _buildInfoTile('Department', _user!.department ?? 'N/A'),
+                      _buildInfoTile('departement', _user!.departement ?? 'N/A'),
                       _buildInfoTile('Driving License', _user!.drivingLicense?.toString() ?? 'N/A'),
                       _buildInfoTile('Gender', _user!.gender ?? 'N/A'),
                       _buildInfoTile('Status', _user!.isEnabled),

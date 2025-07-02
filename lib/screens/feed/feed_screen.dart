@@ -1,17 +1,19 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pte_mobile/models/post.dart';
 import 'package:pte_mobile/models/user.dart';
 import 'package:pte_mobile/screens/feed/post_details.dart';
 import 'package:pte_mobile/screens/messaging/home_messages_screen.dart';
+import 'package:pte_mobile/screens/profile_screen.dart';
+import 'package:pte_mobile/screens/users/user_profile.dart';
 import 'package:pte_mobile/services/post_service.dart';
 import 'package:pte_mobile/services/auth_service.dart';
 import 'package:pte_mobile/services/user_service.dart';
 import 'package:pte_mobile/widgets/assistant_sidebar.dart';
 import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:pte_mobile/widgets/engineer_sidebar.dart';
 import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
 import '../../theme/theme.dart';
 import 'package:pte_mobile/screens/feed/user_posts_screen.dart';
@@ -45,6 +47,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
   late ScrollController _scrollController;
   bool _showFloatingButton = true;
+  final Set<String> _hiddenPostIds = {};
+  ScaffoldMessengerState? _scaffoldMessengerState;
 
   @override
   void initState() {
@@ -55,8 +59,13 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
     _loadInitialData();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessengerState = ScaffoldMessenger.of(context);
+  }
+
   void _scrollListener() {
-    // Hide floating button when scrolling down, show when scrolling up
     if (_scrollController.position.userScrollDirection == ScrollDirection.reverse) {
       if (_showFloatingButton) {
         setState(() {
@@ -145,17 +154,39 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
   }
 
   void _showSavedMessage() {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    if (mounted && _scaffoldMessengerState != null) {
+      _scaffoldMessengerState!.showSnackBar(
         SnackBar(
           content: Row(
             children: [
               Icon(Icons.bookmark, color: Colors.white, size: 16),
               SizedBox(width: 8),
-              Text("Post saved"),
+              Text("You saved this post"),
             ],
           ),
-          backgroundColor: lightColorScheme.primary.withOpacity(0.9),
+          backgroundColor: lightColorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          duration: Duration(seconds: 2),
+          margin: EdgeInsets.all(16),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        ),
+      );
+    }
+  }
+
+  void _showUnsavedMessage() {
+    if (mounted && _scaffoldMessengerState != null) {
+      _scaffoldMessengerState!.showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.bookmark_border, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Text("You unsaved this post"),
+            ],
+          ),
+          backgroundColor: Colors.grey.shade700,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           duration: Duration(seconds: 2),
@@ -167,17 +198,17 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
   }
 
   void _showLikedMessage(bool isLiked) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    if (mounted && _scaffoldMessengerState != null) {
+      _scaffoldMessengerState!.showSnackBar(
         SnackBar(
           content: Row(
             children: [
               Icon(isLiked ? Icons.favorite : Icons.favorite_border, color: Colors.white, size: 16),
               SizedBox(width: 8),
-              Text(isLiked ? "Post liked" : "Post unliked"),
+              Text(isLiked ? "You liked this post" : "You unliked this post"),
             ],
           ),
-          backgroundColor: isLiked ? Colors.pink.shade400 : Colors.grey.shade700,
+          backgroundColor: isLiked ? Colors.red.shade400 : Colors.grey.shade700,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           duration: Duration(seconds: 2),
@@ -188,7 +219,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
     }
   }
 
-  Future<void> _toggleSavePost(String postId) async {
+Future<void> _toggleSavePost(String postId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('userId');
@@ -196,11 +227,25 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
 
       final isCurrentlySaved = _savedPosts.any((post) => post.id == postId);
       await _postService.savePost(postId, userId);
-      await _fetchSavedPosts();
-      if (!isCurrentlySaved) _showSavedMessage();
-    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        setState(() {
+          if (isCurrentlySaved) {
+            _savedPosts.removeWhere((post) => post.id == postId);
+          } else {
+            _savedPosts.add(_posts.firstWhere((post) => post.id == postId));
+          }
+        });
+        if (_scaffoldMessengerState != null) {
+          if (isCurrentlySaved) {
+            _showUnsavedMessage();
+          } else {
+            _showSavedMessage();
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted && _scaffoldMessengerState != null) {
+        _scaffoldMessengerState!.showSnackBar(
           SnackBar(
             content: Text("Failed to save/unsave"),
             backgroundColor: Colors.red.shade700,
@@ -215,9 +260,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
   Future<void> _toggleLikePost(String postId) async {
     try {
       final updatedPost = await _postService.likePost(postId);
+      final wasLiked = _likedPostIds.contains(postId);
       if (mounted) {
         setState(() {
-          final wasLiked = _likedPostIds.contains(postId);
           if (wasLiked) {
             _likedPostIds.remove(postId);
           } else {
@@ -227,12 +272,12 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
           if (postIndex != -1) {
             _posts[postIndex] = updatedPost;
           }
-          _showLikedMessage(!wasLiked);
         });
+        _showLikedMessage(!wasLiked);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted && _scaffoldMessengerState != null) {
+        _scaffoldMessengerState!.showSnackBar(
           SnackBar(
             content: Text("Failed to like/unlike"),
             backgroundColor: Colors.red.shade700,
@@ -262,14 +307,16 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('userId');
     if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("User not authenticated"),
-          backgroundColor: Colors.red.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
+      if (mounted && _scaffoldMessengerState != null) {
+        _scaffoldMessengerState!.showSnackBar(
+          SnackBar(
+            content: Text("User not authenticated"),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
       return;
     }
 
@@ -297,27 +344,27 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.feed_outlined, 
-              size: 50, 
-              color: lightColorScheme.primary
+              Icons.feed_outlined,
+              size: 50,
+              color: lightColorScheme.primary,
             ),
           ),
           SizedBox(height: 20),
           Text(
-            'No posts yet', 
+            'No posts yet',
             style: TextStyle(
-              fontSize: 18, 
+              fontSize: 18,
               fontWeight: FontWeight.w600,
               color: lightColorScheme.primary,
-            )
+            ),
           ),
           SizedBox(height: 8),
           Text(
-            'Start the conversation!', 
+            'Start the conversation!',
             style: TextStyle(
               fontSize: 14,
-              color: Colors.grey.shade600
-            )
+              color: Colors.grey.shade600,
+            ),
           ),
           SizedBox(height: 24),
           ElevatedButton.icon(
@@ -397,8 +444,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
                           minHeight: 16,
                         ),
                         child: Text(
-                          notificationProvider.unreadActivityCount > 9 
-                              ? '9+' 
+                          notificationProvider.unreadActivityCount > 9
+                              ? '9+'
                               : notificationProvider.unreadActivityCount.toString(),
                           style: TextStyle(
                             color: Colors.white,
@@ -422,24 +469,23 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
       ),
       drawer: _userRole == 'ADMIN'
           ? AdminSidebar(
-              currentIndex: 0,
-              onTabChange: (index) {
-                setState(() => _currentIndex = index);
-              },
+              currentIndex: _currentIndex,
+              onTabChange: _onTabChange,
             )
           : _userRole == 'LAB-MANAGER'
               ? LabManagerSidebar(
-                  currentIndex: 0,
-                  onTabChange: (index) {
-                    setState(() => _currentIndex = index);
-                  },
+                  currentIndex: _currentIndex,
+                  onTabChange: _onTabChange,
                 )
-              : AssistantSidebar(
-                  currentIndex: 0,
-                  onTabChange: (index) {
-                    setState(() => _currentIndex = index);
-                  },
-                ),
+              : _userRole == 'ENGINEER'
+                  ? EngineerSidebar(
+                      currentIndex: _currentIndex,
+                      onTabChange: _onTabChange,
+                    )
+                  : AssistantSidebar(
+                      currentIndex: _currentIndex,
+                      onTabChange: _onTabChange,
+                    ),
       body: _isLoading
           ? Center(
               child: Column(
@@ -472,6 +518,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
                       itemCount: _posts.length,
                       itemBuilder: (_, index) {
                         final post = _posts.reversed.toList()[index];
+                        if (_hiddenPostIds.contains(post.id)) {
+                          return SizedBox.shrink();
+                        }
                         return Padding(
                           padding: EdgeInsets.only(
                             bottom: 12,
@@ -495,6 +544,29 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver, Ti
                               onLikeToggled: _toggleLikePost,
                               isSaved: _savedPosts.any((p) => p.id == post.id),
                               isLiked: _likedPostIds.contains(post.id),
+                              onHidePost: () {
+                                setState(() {
+                                  _hiddenPostIds.add(post.id);
+                                });
+                                if (mounted && _scaffoldMessengerState != null) {
+                                  _scaffoldMessengerState!.showSnackBar(
+                                    SnackBar(
+                                      content: Text("Post hidden"),
+                                      backgroundColor: Colors.grey.shade700,
+                                      behavior: SnackBarBehavior.floating,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                  );
+                                }
+                              },
+                              onPostUpdated: _fetchPosts,
+                              onPostDeleted: () {
+                                setState(() {
+                                  _posts.removeWhere((p) => p.id == post.id);
+                                  _savedPosts.removeWhere((p) => p.id == post.id);
+                                  _likedPostIds.remove(post.id);
+                                });
+                              },
                             ),
                           ),
                         );
@@ -551,6 +623,7 @@ class _ActivitySheetState extends State<ActivitySheet> {
   final PostService _postService = PostService();
   List<Activity> _activities = [];
   bool _isLoading = true;
+  ScaffoldMessengerState? _scaffoldMessengerState;
 
   @override
   void initState() {
@@ -558,20 +631,25 @@ class _ActivitySheetState extends State<ActivitySheet> {
     _fetchActivities();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessengerState = ScaffoldMessenger.of(context);
+  }
+
   Future<void> _fetchActivities() async {
     try {
       final activities = await _postService.fetchUserActivities(widget.userId);
       if (mounted) {
         setState(() {
-          _activities = activities;
+          _activities = activities.where((activity) => activity.type == 'like' || activity.type == 'comment').toList();
           _isLoading = false;
         });
       }
     } catch (e) {
       debugPrint('Error fetching activities: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted && _scaffoldMessengerState != null) {
+        _scaffoldMessengerState!.showSnackBar(
           SnackBar(
             content: Text('Failed to load notifications'),
             backgroundColor: Colors.red.shade700,
@@ -580,6 +658,7 @@ class _ActivitySheetState extends State<ActivitySheet> {
           ),
         );
       }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -611,7 +690,7 @@ class _ActivitySheetState extends State<ActivitySheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black ,
             blurRadius: 10,
             offset: Offset(0, -2),
           ),
@@ -623,7 +702,6 @@ class _ActivitySheetState extends State<ActivitySheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle bar for dragging
           Container(
             margin: EdgeInsets.only(top: 12),
             width: 40,
@@ -633,7 +711,6 @@ class _ActivitySheetState extends State<ActivitySheet> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          // Header
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Row(
@@ -657,7 +734,6 @@ class _ActivitySheetState extends State<ActivitySheet> {
             ),
           ),
           Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
-          // Content
           _isLoading
               ? Padding(
                   padding: EdgeInsets.symmetric(vertical: 40),
@@ -783,12 +859,21 @@ class _ActivitySheetState extends State<ActivitySheet> {
   }
 }
 
+enum PostMenuOption {
+  update,
+  delete,
+  hide,
+}
+
 class PostCard extends StatefulWidget {
   final Post post;
   final Function(String) onSaveToggled;
   final Function(String) onLikeToggled;
   final bool isSaved;
   final bool isLiked;
+  final VoidCallback onHidePost;
+  final VoidCallback onPostUpdated;
+  final VoidCallback onPostDeleted;
 
   const PostCard({
     Key? key,
@@ -797,6 +882,9 @@ class PostCard extends StatefulWidget {
     required this.onLikeToggled,
     required this.isSaved,
     required this.isLiked,
+    required this.onHidePost,
+    required this.onPostUpdated,
+    required this.onPostDeleted,
   }) : super(key: key);
 
   @override
@@ -807,12 +895,28 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   bool _isImageExpanded = false;
+  String? _currentUserId;
+  ScaffoldMessengerState? _scaffoldMessengerState;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(duration: const Duration(milliseconds: 200), vsync: this);
     _scaleAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _loadCurrentUserId();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessengerState = ScaffoldMessenger.of(context);
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserId = prefs.getString('userId');
+    });
   }
 
   @override
@@ -844,48 +948,107 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     );
   }
 
+  void _showUpdatePostSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => UpdatePostSheet(
+        post: widget.post,
+        onPostUpdated: () {
+          Navigator.pop(context);
+          widget.onPostUpdated();
+        },
+      ),
+    );
+  }
+
+  Future<void> _deletePost() async {
+    try {
+      await PostService().deletePost(widget.post.id);
+      if (mounted) {
+        widget.onPostDeleted();
+        if (_scaffoldMessengerState != null) {
+          _scaffoldMessengerState!.showSnackBar(
+            SnackBar(
+              content: Text("Post deleted"),
+              backgroundColor: Colors.grey.shade700,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted && _scaffoldMessengerState != null) {
+        _scaffoldMessengerState!.showSnackBar(
+          SnackBar(
+            content: Text("Failed to delete post"),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+  }
+
   void _toggleImageExpansion() {
     setState(() {
       _isImageExpanded = !_isImageExpanded;
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final likes = widget.post.likes;
+  void _navigateToPostDetails() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailScreen(postId: widget.post.id)),
+    );
+  }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // User info header
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: InkWell(
-              onTap: () => Navigator.push(
-                context, 
-                MaterialPageRoute(builder: (_) => UserPostsScreen(user: widget.post.user))
-              ),
-              borderRadius: BorderRadius.circular(12),
+  @override
+Widget build(BuildContext context) {
+    final likes = widget.post.likes;
+    final isOwnPost = _currentUserId != null && widget.post.user.id == _currentUserId;
+
+    return GestureDetector(
+      onTap: _navigateToPostDetails,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundImage: NetworkImage(
-                      widget.post.user.image != null
-                          ? '${Env.userImageBaseUrl}${widget.post.user.image}'
-                          : 'https://ui-avatars.com/api/?name=${widget.post.user.firstName}+${widget.post.user.lastName}&background=0632A1&color=fff',
+                  GestureDetector(
+                    onTap: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      final currentUserId = prefs.getString('userId');
+                      if (currentUserId != null && currentUserId == widget.post.user.id) {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen()));
+                      } else {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfileScreen(userId: widget.post.user.id)));
+                      }
+                    },
+                    child: CircleAvatar(
+                      radius: 20,
+                      backgroundImage: NetworkImage(
+                        widget.post.user.image != null
+                            ? '${Env.userImageBaseUrl}${widget.post.user.image}'
+                            : 'https://ui-avatars.com/api/?name=${widget.post.user.firstName}+${widget.post.user.lastName}&background=0632A1&color=fff',
+                      ),
                     ),
                   ),
                   SizedBox(width: 10),
@@ -893,194 +1056,245 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${widget.post.user.firstName} ${widget.post.user.lastName}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600, 
-                            fontSize: 15,
-                            color: Colors.grey.shade800,
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              '${widget.post.user.firstName} ${widget.post.user.lastName}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                            if (widget.post.user.roles.contains('ADMIN')) ...[
+                              SizedBox(width: 4),
+                              Icon(
+                                Icons.verified,
+                                color: Colors.blue.shade600,
+                                size: 16,
+                              ),
+                            ],
+                          ],
                         ),
                         Text(
-                          _formatDateTime(widget.post.date), 
+                          _formatDateTime(widget.post.date),
                           style: TextStyle(
-                            color: Colors.grey.shade600, 
-                            fontSize: 12
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  IconButton(
+                  PopupMenuButton<PostMenuOption>(
                     icon: Icon(Icons.more_horiz, color: Colors.grey.shade700, size: 20),
-                    onPressed: () {},
+                    onSelected: (PostMenuOption option) {
+                      switch (option) {
+                        case PostMenuOption.update:
+                          _showUpdatePostSheet();
+                          break;
+                        case PostMenuOption.delete:
+                          _deletePost();
+                          break;
+                        case PostMenuOption.hide:
+                          widget.onHidePost();
+                          break;
+                      }
+                    },
+                    itemBuilder: (BuildContext context) => isOwnPost
+                        ? [
+                            PopupMenuItem<PostMenuOption>(
+                              value: PostMenuOption.update,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit, size: 18, color: Colors.grey.shade700),
+                                  SizedBox(width: 8),
+                                  Text('Update Post', style: TextStyle(fontSize: 14)),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem<PostMenuOption>(
+                              value: PostMenuOption.delete,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete, size: 18, color: Colors.red.shade700),
+                                  SizedBox(width: 8),
+                                  Text('Delete Post', style: TextStyle(fontSize: 14)),
+                                ],
+                              ),
+                            ),
+                          ]
+                        : [
+                            PopupMenuItem<PostMenuOption>(
+                              value: PostMenuOption.hide,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.visibility_off, size: 18, color: Colors.grey.shade700),
+                                  SizedBox(width: 8),
+                                  Text('Hide Post', style: TextStyle(fontSize: 14)),
+                                ],
+                              ),
+                            ),
+                          ],
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 4,
+                  ),
+                ],
+              ),
+            ),
+            if (widget.post.description.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  widget.post.description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade800,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            if (widget.post.images.isNotEmpty) ...[
+              GestureDetector(
+                onTap: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  final currentUserId = prefs.getString('userId');
+                  if (currentUserId != null && currentUserId == widget.post.user.id) {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen()));
+                  } else {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfileScreen(userId: widget.post.user.id)));
+                  }
+                },
+                onDoubleTap: () {
+                  _triggerAnimation();
+                  if (!widget.isLiked) {
+                    widget.onLikeToggled(widget.post.id);
+                  }
+                },
+                child: Container(
+                  height: _isImageExpanded ? 400 : 250,
+                  margin: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.grey.shade200,
+                  ),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: PageView.builder(
+                          itemCount: widget.post.images.length,
+                          itemBuilder: (_, index) => Image.network(
+                            '${Env.imageBaseUrl}${widget.post.images[index]}',
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: double.infinity,
+                            errorBuilder: (_, __, ___) => Center(
+                              child: Icon(Icons.broken_image, size: 40, color: Colors.grey.shade400),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (widget.post.images.length > 1)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${widget.post.images.length} photos',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        bottom: 8,
+                        right: 8,
+                        child: GestureDetector(
+                          onTap: _toggleImageExpansion,
+                          child: Container(
+                            padding: EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.6),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _isImageExpanded ? Icons.fullscreen_exit : Icons.fullscreen,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  _buildActionButton(
+                    icon: widget.isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: widget.isLiked ? Colors.red.shade400 : Colors.grey.shade700,
+                    count: likes.length,
+                    countColor: widget.isLiked ? Colors.red.shade400 : Colors.grey.shade700,
+                    onPressed: () async {
+                      await _triggerAnimation();
+                      widget.onLikeToggled(widget.post.id);
+                    },
+                    animation: _scaleAnimation,
+                    controller: _controller,
+                  ),
+                  SizedBox(width: 16),
+                  _buildActionButton(
+                    icon: Icons.chat_bubble_outline,
+                    color: lightColorScheme.primary,
+                    onPressed: _showCommentsSheet,
+                  ),
+                  Spacer(),
+                  IconButton(
+                    icon: Icon(
+                      widget.isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      color: widget.isSaved ? lightColorScheme.primary : Colors.grey.shade700,
+                      size: 22,
+                    ),
+                    onPressed: () async {
+                      await _triggerAnimation();
+                      widget.onSaveToggled(widget.post.id);
+                    },
                     padding: EdgeInsets.zero,
                     constraints: BoxConstraints(),
                   ),
                 ],
               ),
             ),
-          ),
-          
-          // Post description
-          if (widget.post.description.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text(
-                widget.post.description,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade800,
-                  height: 1.4,
-                ),
-              ),
-            ),
-          
-          // Post images
-          if (widget.post.images.isNotEmpty) ...[
-            GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => PostDetailScreen(postId: widget.post.id)),
-              ),
-              onDoubleTap: () {
-                _triggerAnimation();
-                if (!widget.isLiked) {
-                  widget.onLikeToggled(widget.post.id);
-                }
-              },
-              child: Container(
-                height: _isImageExpanded ? 400 : 250,
-                margin: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: Colors.grey.shade200,
-                ),
-                child: Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: PageView.builder(
-                        itemCount: widget.post.images.length,
-                        itemBuilder: (_, index) => Image.network(
-                          '${Env.imageBaseUrl}${widget.post.images[index]}',
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                          errorBuilder: (_, __, ___) => Center(
-                            child: Icon(Icons.broken_image, size: 40, color: Colors.grey.shade400),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (widget.post.images.length > 1)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${widget.post.images.length} photos',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-                    Positioned(
-                      bottom: 8,
-                      right: 8,
-                      child: GestureDetector(
-                        onTap: _toggleImageExpansion,
-                        child: Container(
-                          padding: EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _isImageExpanded ? Icons.fullscreen_exit : Icons.fullscreen,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
-          
-          // Action buttons
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                // Like button
-                _buildActionButton(
-                  icon: widget.isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: widget.isLiked ? Colors.pink.shade400 : Colors.grey.shade700,
-                  count: likes.length,
-                  countColor: widget.isLiked ? Colors.pink.shade400 : Colors.grey.shade700,
-                  onPressed: () async {
-                    await _triggerAnimation();
-                    widget.onLikeToggled(widget.post.id);
-                  },
-                  animation: _scaleAnimation,
-                  controller: _controller,
-                ),
-                
-                SizedBox(width: 16),
-                
-                // Comment button (count removed)
-                _buildActionButton(
-                  icon: Icons.chat_bubble_outline,
-                  color: lightColorScheme.primary,
-                  onPressed: _showCommentsSheet,
-                ),
-                
-                Spacer(),
-                
-                // Save button
-                IconButton(
-                  icon: Icon(
-                    widget.isSaved ? Icons.bookmark : Icons.bookmark_border,
-                    color: widget.isSaved ? lightColorScheme.primary : Colors.grey.shade700,
-                    size: 22,
-                  ),
-                  onPressed: () async {
-                    await _triggerAnimation();
-                    widget.onSaveToggled(widget.post.id);
-                  },
-                  padding: EdgeInsets.zero,
-                  constraints: BoxConstraints(),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
-  
+
   Widget _buildActionButton({
     required IconData icon,
     required Color color,
-    int? count, // Made count optional
-    Color? countColor, // Made countColor optional
+    int? count,
+    Color? countColor,
     required VoidCallback onPressed,
     Animation<double>? animation,
     AnimationController? controller,
   }) {
     final Widget iconWidget = Icon(icon, color: color, size: 20);
-    
+
     return Row(
       children: [
         IconButton(
@@ -1106,7 +1320,6 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     );
   }
 }
-
 class CommentSheet extends StatefulWidget {
   final String postId;
 
@@ -1122,11 +1335,18 @@ class _CommentSheetState extends State<CommentSheet> {
   List<Comment> _comments = [];
   bool _isLoading = true;
   bool _isSubmitting = false;
+  ScaffoldMessengerState? _scaffoldMessengerState;
 
   @override
   void initState() {
     super.initState();
     _fetchComments();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessengerState = ScaffoldMessenger.of(context);
   }
 
   Future<void> _fetchComments() async {
@@ -1144,11 +1364,11 @@ class _CommentSheetState extends State<CommentSheet> {
 
   Future<void> _addComment() async {
     if (_commentController.text.trim().isEmpty) return;
-    
+
     setState(() {
       _isSubmitting = true;
     });
-    
+
     try {
       final newComment = await _postService.addComment(widget.postId, _commentController.text);
       if (mounted) {
@@ -1157,18 +1377,10 @@ class _CommentSheetState extends State<CommentSheet> {
           _commentController.clear();
           _isSubmitting = false;
         });
-        
-        // Scroll to bottom to show new comment
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_comments.isNotEmpty) {
-            // Scroll logic would go here if using a ScrollController
-          }
-        });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted && _scaffoldMessengerState != null) {
+        _scaffoldMessengerState!.showSnackBar(
           SnackBar(
             content: Text('Failed to add comment'),
             backgroundColor: Colors.red.shade700,
@@ -1177,17 +1389,8 @@ class _CommentSheetState extends State<CommentSheet> {
           ),
         );
       }
+      if (mounted) setState(() => _isSubmitting = false);
     }
-  }
-
-  String _formatCommentTime(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-    if (difference.inMinutes < 1) return '';
-    if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
-    if (difference.inHours < 24) return '${difference.inHours}h ago';
-    if (difference.inDays < 7) return '${difference.inDays}d ago';
-    return '${date.day}/${date.month}/${date.year}';
   }
 
   @override
@@ -1211,7 +1414,6 @@ class _CommentSheetState extends State<CommentSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle bar for dragging
           Container(
             margin: EdgeInsets.only(top: 12),
             width: 40,
@@ -1221,8 +1423,6 @@ class _CommentSheetState extends State<CommentSheet> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          
-          // Header
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Row(
@@ -1245,10 +1445,7 @@ class _CommentSheetState extends State<CommentSheet> {
               ],
             ),
           ),
-          
           Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
-          
-          // Comments list
           Flexible(
             child: _isLoading
                 ? Center(
@@ -1349,7 +1546,6 @@ class _CommentSheetState extends State<CommentSheet> {
                                         ],
                                       ),
                                     ),
-                                    
                                   ],
                                 ),
                               ),
@@ -1358,8 +1554,6 @@ class _CommentSheetState extends State<CommentSheet> {
                         },
                       ),
           ),
-          
-          // Comment input
           Container(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -1512,7 +1706,7 @@ class UserSearchDelegate extends SearchDelegate {
             child: CircularProgressIndicator(color: lightColorScheme.primary),
           );
         }
-        
+
         if (snapshot.hasError) {
           return Center(
             child: Column(
@@ -1630,14 +1824,44 @@ class CreatePostSheet extends StatefulWidget {
   const CreatePostSheet({Key? key, required this.onPostCreated}) : super(key: key);
 
   @override
-  _CreatePostSheetState createState() => _CreatePostSheetState();
+  _PostSheetState createState() => _PostSheetState();
 }
 
-class _CreatePostSheetState extends State<CreatePostSheet> {
+class UpdatePostSheet extends StatefulWidget {
+  final Post post;
+  final VoidCallback onPostUpdated;
+
+  const UpdatePostSheet({
+    Key? key,
+    required this.post,
+    required this.onPostUpdated,
+  }) : super(key: key);
+
+  @override
+  _PostSheetState createState() => _PostSheetState();
+}
+
+class _PostSheetState extends State<StatefulWidget> {
   final PostService _postService = PostService();
   final TextEditingController _descriptionController = TextEditingController();
   List<File> _images = [];
   bool _isSubmitting = false;
+  ScaffoldMessengerState? _scaffoldMessengerState;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget is UpdatePostSheet) {
+      final post = (widget as UpdatePostSheet).post;
+      _descriptionController.text = post.description;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessengerState = ScaffoldMessenger.of(context);
+  }
 
   Future<void> _pickImages() async {
     final pickedFiles = await ImagePicker().pickMultiImage();
@@ -1646,32 +1870,47 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
 
   Future<void> _submitPost() async {
     if (_descriptionController.text.trim().isEmpty && _images.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Please add some content to your post'),
-          backgroundColor: Colors.red.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          margin: EdgeInsets.all(16),
-        ),
-      );
+      if (mounted && _scaffoldMessengerState != null) {
+        _scaffoldMessengerState!.showSnackBar(
+          SnackBar(
+            content: Text('Please add some content to your post'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: EdgeInsets.all(16),
+          ),
+        );
+      }
       return;
     }
-    
+
     setState(() => _isSubmitting = true);
-    
+
     try {
-      await _postService.createPost(_descriptionController.text, _images);
-      _descriptionController.clear();
-      _images.clear();
-      widget.onPostCreated();
-      _showPostPendingDialog();
-    } catch (e) {
-      debugPrint('Error creating post: $e');
+      if (widget is CreatePostSheet) {
+        await _postService.createPost(_descriptionController.text, _images);
+        if (mounted) {
+          _showPostCreationDialog();
+          (widget as CreatePostSheet).onPostCreated();
+        }
+      } else if (widget is UpdatePostSheet) {
+        final post = (widget as UpdatePostSheet).post;
+        await _postService.updatePost(post.id, _descriptionController.text, _images);
+        if (mounted) {
+          _showPostUpdateDialog();
+          (widget as UpdatePostSheet).onPostUpdated();
+        }
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _descriptionController.clear();
+        setState(() => _images.clear());
+      }
+    } catch (e) {
+      debugPrint('Error processing post: $e');
+      if (mounted && _scaffoldMessengerState != null) {
+        _scaffoldMessengerState!.showSnackBar(
           SnackBar(
-            content: Text('Failed to create post'),
+            content: Text(widget is CreatePostSheet ? 'Failed to create post' : 'Failed to update post'),
             backgroundColor: Colors.red.shade700,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1684,7 +1923,7 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
     }
   }
 
-  void _showPostPendingDialog() {
+  void _showPostCreationDialog() {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -1751,8 +1990,76 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
     );
   }
 
+  void _showPostUpdateDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 4,
+        backgroundColor: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: lightColorScheme.primary.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.check_circle_outline,
+                  size: 50,
+                  color: lightColorScheme.primary,
+                ),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Post Updated',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'Your post has been updated and is under review.',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: lightColorScheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 2,
+                ),
+                child: Text(
+                  'Got it',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isUpdate = widget is UpdatePostSheet;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1771,7 +2078,6 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle bar for dragging
           Container(
             margin: EdgeInsets.only(top: 12),
             width: 40,
@@ -1781,15 +2087,13 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          
-          // Header
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Create Post',
+                  isUpdate ? 'Update Post' : 'Create Post',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -1805,10 +2109,7 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
               ],
             ),
           ),
-          
           Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
-          
-          // Post content input
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: TextField(
@@ -1827,8 +2128,6 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
               ),
             ),
           ),
-          
-          // Selected images preview
           if (_images.isNotEmpty)
             Container(
               height: 100,
@@ -1871,13 +2170,10 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
                 ),
               ),
             ),
-          
-          // Action buttons
           Padding(
             padding: EdgeInsets.all(20),
             child: Row(
               children: [
-                // Add image button
                 Container(
                   decoration: BoxDecoration(
                     color: lightColorScheme.primary.withOpacity(0.1),
@@ -1893,10 +2189,7 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
                     tooltip: 'Add Photos',
                   ),
                 ),
-                
                 Spacer(),
-                
-                // Post button
                 ElevatedButton(
                   onPressed: _isSubmitting ? null : _submitPost,
                   style: ElevatedButton.styleFrom(
@@ -1922,7 +2215,7 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
                             ),
                             SizedBox(width: 8),
                             Text(
-                              'Posting...',
+                              isUpdate ? 'Updating...' : 'Posting...',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
@@ -1931,7 +2224,7 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
                           ],
                         )
                       : Text(
-                          'Post',
+                          isUpdate ? 'Update' : 'Post',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

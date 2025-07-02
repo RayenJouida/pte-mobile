@@ -5,6 +5,8 @@ import 'package:pte_mobile/models/user.dart';
 import 'package:pte_mobile/services/leave_service.dart';
 import 'package:pte_mobile/services/user_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AllLeaveRequestsScreen extends StatefulWidget {
   const AllLeaveRequestsScreen({Key? key}) : super(key: key);
@@ -21,8 +23,15 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
   List<User> _supervisors = [];
   bool _isLoading = true;
   String? _userRole;
+  String? _userId;
   String _searchQuery = '';
   String _selectedStatus = 'All';
+  bool _isProcessing = false;
+
+  // Pagination variables
+  int _currentPage = 1;
+  final int _itemsPerPage = 4;
+  final ScrollController _scrollController = ScrollController();
 
   final TextEditingController _searchController = TextEditingController();
 
@@ -32,18 +41,29 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
     _checkAuthentication();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _checkAuthentication() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('authToken');
     final role = prefs.getString('userRole');
-    if (token == null) {
+    final userId = prefs.getString('userId');
+
+    if (token == null || userId == null) {
       Navigator.pushReplacementNamed(context, '/login');
       return;
     }
+
     setState(() {
       _userRole = role;
+      _userId = userId;
     });
-    _fetchData();
+    await _fetchData();
   }
 
   Future<void> _logoutAndRedirect() async {
@@ -55,36 +75,70 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
 
   Future<void> _fetchData() async {
     try {
-      final leaveRequests = await _leaveService.fetchAllLeaves();
-      final users = await _userService.fetchUsers();
-      setState(() {
-        _leaveRequests = leaveRequests;
-        _filteredLeaveRequests = leaveRequests;
-        _supervisors = users
-            .map((user) => User.fromJson(user))
-            .where((user) => user.roles.contains('ADMIN') || user.roles.contains('LAB-MANAGER'))
-            .toList();
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (e.toString().contains('Not authorized')) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Session expired. Please log in again.')),
-        );
-        await _logoutAndRedirect();
+      List<Leave> leaveRequests;
+      if (_userRole == 'ADMIN') {
+        leaveRequests = await _leaveService.fetchAllLeaves();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load data: $e')),
-        );
+        if (_userId != null) {
+          leaveRequests = await _leaveService.fetchWorkerRequests(_userId!);
+        } else {
+          throw Exception('No user ID found');
+        }
+      }
+      final users = await _userService.fetchUsers();
+      if (mounted) {
+        setState(() {
+          _leaveRequests = leaveRequests
+            ..sort((a, b) => b.localCreationTime.compareTo(a.localCreationTime));
+          _filteredLeaveRequests = List.from(_leaveRequests);
+          _supervisors = users
+              .map((user) => User.fromJson(user))
+              .where((user) => user.roles.contains('ADMIN') || user.roles.contains('LAB-MANAGER'))
+              .toList();
+          _isLoading = false;
+          _currentPage = 1;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        if (e.toString().contains('Not authorized') || e.toString().contains('401')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Session expired. Please log in again.'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              margin: EdgeInsets.all(16),
+              duration: Duration(seconds: 3),
+            ),
+          );
+          await _logoutAndRedirect();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to load data: $e'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
     }
   }
 
-  String _getSupervisorName(User? supervisor) {
+  Future<String> _getSupervisorName(User? supervisor) async {
     if (supervisor == null) return 'N/A';
+    if (supervisor.firstName == 'Unknown' && supervisor.id != 'unknown') {
+      final userData = await _userService.getUserById(supervisor.id);
+      if (userData != null) {
+        final user = User.fromJson(userData);
+        return '${user.firstName} ${user.lastName}';
+      }
+    }
     return '${supervisor.firstName} ${supervisor.lastName}';
   }
 
@@ -97,7 +151,6 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
         final query = _searchQuery.toLowerCase();
         final matchesSearch = leave.type.toLowerCase().contains(query) ||
             (leave.status ?? 'Pending').toLowerCase().contains(query) ||
-            leave.startDate.toString().toLowerCase().contains(query) ||
             leave.endDate.toString().toLowerCase().contains(query) ||
             (leave.note ?? '').toLowerCase().contains(query) ||
             (leave.code ?? '').toLowerCase().contains(query) ||
@@ -105,66 +158,141 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
             leave.email.toLowerCase().contains(query);
 
         return matchesStatus && matchesSearch;
-      }).toList();
+      }).toList()
+        ..sort((a, b) => b.localCreationTime.compareTo(a.localCreationTime));
+      _currentPage = 1;
     });
   }
 
   Color _getStatusColor(String? status) {
     switch (status) {
       case 'Approved':
-        return Colors.green;
-      case 'Rejected':
-        return Colors.red;
+        return Colors.green.shade600;
+      case 'Declined':
+        return Colors.red.shade600;
       case 'Pending 1/2':
-        return Colors.orange;
       case 'Pending':
-        return Colors.orange;
+      case 'Pending 0/2':
+        return Colors.orange.shade600;
       default:
-        return Colors.grey;
+        return Colors.grey.shade600;
     }
   }
 
   Future<void> _handleApproval(String leaveId, bool approve) async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
     try {
+      final leaveIndex = _leaveRequests.indexWhere((l) => l.id == leaveId);
+      if (leaveIndex == -1) {
+        throw Exception('Leave request not found');
+      }
+
+      Leave currentLeave = _leaveRequests[leaveIndex];
+      if (currentLeave.status == 'Approved' || currentLeave.status == 'Declined') {
+        _showStatusAlert('This request has already been processed.');
+        return;
+      }
+
       if (_userRole == 'ADMIN') {
         if (approve) {
           await _leaveService.managerAccept(leaveId);
+          setState(() {
+            _leaveRequests[leaveIndex] = currentLeave.copyWith(status: 'Approved', managerAccepted: true);
+            _filteredLeaveRequests = List.from(_leaveRequests);
+          });
         } else {
           await _leaveService.managerDecline(leaveId);
+          setState(() {
+            _leaveRequests[leaveIndex] = currentLeave.copyWith(status: 'Declined', managerAccepted: false);
+            _filteredLeaveRequests = List.from(_leaveRequests);
+          });
         }
-      } else if (_userRole == 'LAB-MANAGER') {
+      } else {
         if (approve) {
+          if (currentLeave.status != 'Pending 0/2') {
+            _showStatusAlert('Only Pending 0/2 requests can be approved by you.');
+            return;
+          }
+          setState(() {
+            _leaveRequests[leaveIndex] = currentLeave.copyWith(status: 'Pending 1/2', supervisorAccepted: true);
+            _filteredLeaveRequests = List.from(_leaveRequests);
+          });
           await _leaveService.workerAccept(leaveId);
+          if (_userId != null) {
+            final updatedLeaves = await _leaveService.fetchWorkerRequests(_userId!);
+            final updatedLeave = updatedLeaves.firstWhere(
+              (l) => l.id == leaveId,
+              orElse: () => currentLeave,
+            );
+            if (updatedLeave.status == 'Pending' && updatedLeave.supervisorAccepted == true) {
+              setState(() {
+                _leaveRequests[leaveIndex] = updatedLeave;
+                _filteredLeaveRequests = List.from(_leaveRequests);
+              });
+            } else {
+              setState(() {
+                _leaveRequests[leaveIndex] = currentLeave.copyWith(status: 'Pending', supervisorAccepted: true);
+                _filteredLeaveRequests = List.from(_leaveRequests);
+              });
+              await _fetchData();
+              _showStatusAlert('Update applied locally. Sync completed.');
+            }
+          }
         } else {
           await _leaveService.workerDecline(leaveId);
+          setState(() {
+            _leaveRequests[leaveIndex] = currentLeave.copyWith(status: 'Declined', supervisorAccepted: false);
+            _filteredLeaveRequests = List.from(_leaveRequests);
+          });
         }
       }
+
       await _fetchData();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(approve ? 'Leave request approved' : 'Leave request declined')),
-      );
+      _showStatusAlert(approve ? 'Leave request approved' : 'Leave request declined');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to process request: $e')),
-      );
+      _showStatusAlert('Failed to process request: $e');
+    } finally {
+      setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _downloadCertif(String? certifUrl) async {
+    if (certifUrl != null && certifUrl.isNotEmpty) {
+      final uri = Uri.parse(certifUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        _showStatusAlert('Could not open certificate link');
+      }
     }
   }
 
   void _showLeaveDetailsDialog(BuildContext context, Leave leave) {
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
+    final dialogWidth = isSmallScreen ? screenSize.width * 0.9 : 550.0;
+    final maxDialogHeight = screenSize.height * 0.85;
+
     showDialog(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        elevation: 8,
+        elevation: 10,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: isSmallScreen ? 16 : 24,
+          vertical: isSmallScreen ? 16 : 24,
+        ),
         child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
+          width: dialogWidth,
+          constraints: BoxConstraints(maxHeight: maxDialogHeight),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
             color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
+                blurRadius: 12,
                 spreadRadius: 2,
               ),
             ],
@@ -172,11 +300,12 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Header
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
+                padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
                     colors: [Color(0xFF0632A1), Color(0xFF2E5CDB)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -190,167 +319,358 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Text(
-                        leave.type,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            leave.type,
+                            style: TextStyle(
+                              fontSize: isSmallScreen ? 20 : 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Code: ${leave.code ?? 'N/A'}',
+                            style: TextStyle(
+                              fontSize: isSmallScreen ? 13 : 14,
+                              color: Colors.white.withOpacity(0.8),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white, size: 24),
+                      onPressed: () => Navigator.pop(dialogContext),
+                      splashRadius: 20,
                     ),
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(leave.status).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _getStatusColor(leave.status), width: 1),
+              // Content
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Info Section
+                      _buildInfoCard(
+                        title: 'Request Details',
+                        icon: Icons.info_outline,
+                        children: [
+                          _buildInfoRow(
+                            icon: Icons.calendar_today,
+                            label: 'Date Range',
+                            value: '${_formatDate(leave.startDate)} - ${_formatDate(leave.endDate)}',
+                            isSmallScreen: isSmallScreen,
                           ),
-                          child: Text(
-                            leave.status ?? 'Pending',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: _getStatusColor(leave.status),
+                          SizedBox(height: 12),
+                          _buildInfoRow(
+                            icon: Icons.person,
+                            label: 'Applicant',
+                            value: leave.fullName,
+                            isSmallScreen: isSmallScreen,
+                          ),
+                          SizedBox(height: 12),
+                          _buildInfoRow(
+                            icon: Icons.email,
+                            label: 'Email',
+                            value: leave.email,
+                            isSmallScreen: isSmallScreen,
+                          ),
+                          SizedBox(height: 12),
+                          _buildInfoRow(
+                            icon: Icons.supervisor_account,
+                            label: 'Supervisor',
+                            valueWidget: FutureBuilder<String>(
+                              future: _getSupervisorName(leave.supervisor),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                  return Text(
+                                    'Loading...',
+                                    style: TextStyle(
+                                      fontSize: isSmallScreen ? 14 : 15,
+                                      color: Colors.grey.shade800,
+                                    ),
+                                  );
+                                }
+                                return Text(
+                                  snapshot.data ?? 'N/A',
+                                  style: TextStyle(
+                                    fontSize: isSmallScreen ? 14 : 15,
+                                    color: Colors.grey.shade800,
+                                  ),
+                                );
+                              },
                             ),
+                            isSmallScreen: isSmallScreen,
                           ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          'Code: ${leave.code ?? 'N/A'}',
-                          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                        ],
+                        isSmallScreen: isSmallScreen,
+                      ),
+                      // Status Section
+                      SizedBox(height: 20),
+                      _buildInfoCard(
+                        title: 'Approval Status',
+                        icon: Icons.check_circle_outline,
+                        children: [
+                          _buildInfoRow(
+                            icon: Icons.info,
+                            label: 'Status',
+                            value: leave.status ?? 'Pending',
+                            valueColor: _getStatusColor(leave.status),
+                            isSmallScreen: isSmallScreen,
+                          ),
+                          SizedBox(height: 12),
+                          _buildInfoRow(
+                            icon: Icons.supervisor_account,
+                            label: 'Supervisor Approval',
+                            value: leave.supervisorAccepted != null
+                                ? leave.supervisorAccepted! ? 'Approved' : 'Declined'
+                                : 'Pending',
+                            valueColor: leave.supervisorAccepted == true
+                                ? Colors.green.shade600
+                                : leave.supervisorAccepted == false
+                                    ? Colors.red.shade600
+                                    : Colors.orange.shade600,
+                            isSmallScreen: isSmallScreen,
+                          ),
+                          SizedBox(height: 12),
+                          _buildInfoRow(
+                            icon: Icons.manage_accounts,
+                            label: 'Manager Approval',
+                            value: leave.managerAccepted != null
+                                ? leave.managerAccepted! ? 'Approved' : 'Declined'
+                                : 'Pending',
+                            valueColor: leave.managerAccepted == true
+                                ? Colors.green.shade600
+                                : leave.managerAccepted == false
+                                    ? Colors.red.shade600
+                                    : Colors.orange.shade600,
+                            isSmallScreen: isSmallScreen,
+                          ),
+                        ],
+                        isSmallScreen: isSmallScreen,
+                      ),
+                      // Note Section
+                      if (leave.note != null && leave.note!.isNotEmpty) ...[
+                        SizedBox(height: 20),
+                        _buildInfoCard(
+                          title: 'Additional Notes',
+                          icon: Icons.note,
+                          children: [
+                            Text(
+                              leave.note!,
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 14 : 15,
+                                color: Colors.grey.shade800,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                          isSmallScreen: isSmallScreen,
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 20),
-                    _buildDialogInfoRow(
-                      icon: Icons.calendar_today,
-                      label: 'Date Range',
-                      value:
-                          '${leave.startDate.toLocal().toString().split(' ')[0]} - ${leave.endDate.toLocal().toString().split(' ')[0]}',
-                    ),
-                    const Divider(height: 30),
-                    _buildDialogInfoRow(
-                      icon: Icons.person,
-                      label: 'Applicant',
-                      value: leave.fullName,
-                    ),
-                    _buildDialogInfoRow(
-                      icon: Icons.email,
-                      label: 'Email',
-                      value: leave.email,
-                    ),
-                    const Divider(height: 30),
-                    _buildDialogInfoRow(
-                      icon: Icons.supervisor_account,
-                      label: 'Supervisor',
-                      value: _getSupervisorName(leave.supervisor),
-                    ),
-                    _buildDialogInfoRow(
-                      icon: Icons.check_circle,
-                      label: 'Supervisor Accepted',
-                      value: leave.supervisorAccepted != null
-                          ? (leave.supervisorAccepted! ? 'Yes' : 'No')
-                          : 'Pending',
-                      valueColor: leave.supervisorAccepted == true
-                          ? Colors.green
-                          : leave.supervisorAccepted == false
-                              ? Colors.red
-                              : Colors.grey,
-                    ),
-                    _buildDialogInfoRow(
-                      icon: Icons.manage_accounts,
-                      label: 'Manager Accepted',
-                      value: leave.managerAccepted != null
-                          ? (leave.managerAccepted! ? 'Yes' : 'No')
-                          : 'Pending',
-                      valueColor: leave.managerAccepted == true
-                          ? Colors.green
-                          : leave.managerAccepted == false
-                              ? Colors.red
-                              : Colors.grey,
-                    ),
-                    if (leave.note != null && leave.note!.isNotEmpty) ...[
-                      const Divider(height: 30),
-                      _buildDialogInfoRow(
-                        icon: Icons.note,
-                        label: 'Note',
-                        value: leave.note!,
-                      ),
+                      // Certificate Section
+                      if (leave.certif != null && leave.certif!.isNotEmpty) ...[
+                        SizedBox(height: 20),
+                        _buildInfoCard(
+                          title: 'Certificate',
+                          icon: Icons.download,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _downloadCertif(leave.certif),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.download,
+                                    size: isSmallScreen ? 18 : 20,
+                                    color: Color(0xFF0632A1),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Download Certificate',
+                                    style: TextStyle(
+                                      fontSize: isSmallScreen ? 14 : 15,
+                                      color: Color(0xFF0632A1),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          isSmallScreen: isSmallScreen,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
+                ),
+              ),
+              // Action Buttons
+              if (_userRole != 'ADMIN' && leave.status == 'Pending 1/2' && leave.supervisorAccepted == true)
+                SizedBox.shrink()
+              else
+                Container(
+                  padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(20),
+                      bottomRight: Radius.circular(20),
+                    ),
+                    border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey.shade700,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isSmallScreen ? 16 : 20,
+                            vertical: isSmallScreen ? 10 : 12,
+                          ),
+                        ),
+                        child: Text(
+                          'Close',
+                          style: TextStyle(fontSize: isSmallScreen ? 14 : 15),
+                        ),
+                      ),
+                      if (leave.status != 'Approved' && leave.status != 'Declined' && !_isProcessing) ...[
+                        SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            _handleApproval(leave.id, true);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade600,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isSmallScreen ? 16 : 20,
+                              vertical: isSmallScreen ? 10 : 12,
+                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            'Approve',
+                            style: TextStyle(fontSize: isSmallScreen ? 14 : 15),
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            _handleApproval(leave.id, false);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.shade600,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isSmallScreen ? 16 : 20,
+                              vertical: isSmallScreen ? 10 : 12,
+                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            'Decline',
+                            style: TextStyle(fontSize: isSmallScreen ? 14 : 15),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ).animate().fadeIn(duration: 400.ms).scale(delay: 200.ms),
+    );
+  }
+
+  void _showStatusAlert(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 8,
+        child: Container(
+          constraints: BoxConstraints(maxWidth: 400),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF0632A1), Color(0xFF2E5CDB)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                ),
+                child: const Center(
+                  child: Text(
+                    'Status Update',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.only(right: 20, bottom: 20),
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey.shade800,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Container(
+                padding: EdgeInsets.all(16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    if (leave.status != 'Approved' && leave.status != 'Rejected') ...[
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _handleApproval(leave.id, true);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                        ),
-                        child: const Text(
-                          'Approve',
-                          style: TextStyle(fontSize: 16, color: Colors.white),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _handleApproval(leave.id, false);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                        ),
-                        child: const Text(
-                          'Decline',
-                          style: TextStyle(fontSize: 16, color: Colors.white),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    ElevatedButton(
+                    TextButton(
                       onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0632A1),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Color(0xFF0632A1),
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text(
-                        'Close',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      child: Text(
+                        'OK',
+                        style: TextStyle(fontSize: 14),
                       ),
                     ),
                   ],
@@ -358,46 +678,73 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
               ),
             ],
           ),
-        ).animate().scale(duration: 300.ms, curve: Curves.easeInOut),
+        ),
       ),
     );
   }
 
-  Widget _buildDialogInfoRow({
+  String _formatDate(DateTime date) {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
+  Widget _buildInfoCard({
+    required String title,
     required IconData icon,
-    required String label,
-    required String value,
-    Color? valueColor,
+    required List<Widget> children,
+    required bool isSmallScreen,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            spreadRadius: 1,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: const Color(0xFF0632A1)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+            child: Row(
               children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF0632A1).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: isSmallScreen ? 18 : 20,
+                    color: Color(0xFF0632A1),
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(width: 12),
                 Text(
-                  value,
+                  title,
                   style: TextStyle(
-                    fontSize: 16,
-                    color: valueColor ?? Colors.black87,
-                    fontWeight: FontWeight.w400,
+                    fontSize: isSmallScreen ? 16 : 18,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0632A1),
                   ),
                 ),
               ],
+            ),
+          ),
+          Divider(color: Colors.grey.shade200, height: 1),
+          Padding(
+            padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: children,
             ),
           ),
         ],
@@ -405,26 +752,93 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
     );
   }
 
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    String? value,
+    Widget? valueWidget,
+    Color? valueColor,
+    required bool isSmallScreen,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            icon,
+            size: isSmallScreen ? 16 : 18,
+            color: Color(0xFF0632A1),
+          ),
+        ),
+        SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: isSmallScreen ? 13 : 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              SizedBox(height: 4),
+              valueWidget ??
+                  Text(
+                    value ?? '',
+                    style: TextStyle(
+                      fontSize: isSmallScreen ? 14 : 15,
+                      color: valueColor ?? Colors.grey.shade800,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildStatusPath(Leave leave) {
-    final stages = ['Pending 1/2', 'Pending', 'Final'];
+    final List<String> stages;
     int currentStage = 0;
-    if (leave.status == 'Pending 1/2') {
-      currentStage = 0;
-    } else if (leave.status == 'Pending') {
-      currentStage = 1;
+    if (leave.status == 'Pending 0/2' || (leave.status == 'Pending 1/2' && !leave.supervisorAccepted!)) {
+      stages = ['Pending 0/2', 'Pending 1/2', 'Final'];
+      if (leave.status == 'Pending 0/2') {
+        currentStage = 0;
+      } else if (leave.status == 'Pending 1/2') {
+        currentStage = 1;
+      } else {
+        currentStage = 2;
+      }
     } else {
-      currentStage = 2;
+      stages = ['Pending 1/2', 'Pending', 'Final'];
+      if (leave.status == 'Pending 1/2' && leave.supervisorAccepted!) {
+        currentStage = 0;
+      } else if (leave.status == 'Pending') {
+        currentStage = 1;
+      } else {
+        currentStage = 2;
+      }
     }
 
+    final isSmallScreen = MediaQuery.of(context).size.width < 600;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 12 : 16, horizontal: isSmallScreen ? 8 : 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: List.generate(stages.length, (index) {
           bool isActive = index <= currentStage;
           bool isLast = index == stages.length - 1;
           bool isApproved = leave.status == 'Approved' && isLast;
-          bool isRejected = leave.status == 'Rejected' && isLast;
+          bool isRejected = leave.status == 'Declined' && isLast;
 
           return Expanded(
             child: Row(
@@ -436,31 +850,35 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
                         String message;
                         if (index == 0) {
                           message = leave.supervisorAccepted == true
-                              ? 'Supervisor approved on ${leave.startDate.toLocal().toString().split(' ')[0]}'
+                              ? 'Supervisor approved on ${_formatDate(leave.startDate)}'
                               : 'Awaiting supervisor approval';
                         } else if (index == 1) {
-                          message = leave.managerAccepted == true
-                              ? 'Manager approved on ${leave.endDate.toLocal().toString().split(' ')[0]}'
-                              : 'Awaiting manager approval';
+                          if (stages[1] == 'Pending 1/2') {
+                            message = leave.supervisorAccepted == true
+                                ? 'Supervisor approved on ${_formatDate(leave.startDate)}'
+                                : 'Awaiting manager approval';
+                          } else {
+                            message = leave.managerAccepted == true
+                                ? 'Manager approved on ${_formatDate(leave.endDate)}'
+                                : 'Awaiting manager approval';
+                          }
                         } else {
                           message = leave.status == 'Approved'
                               ? 'Leave approved'
-                              : leave.status == 'Rejected'
+                              : leave.status == 'Declined'
                                   ? 'Leave rejected'
                                   : 'Final status pending';
                         }
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(message)),
-                        );
+                        _showStatusAlert(message);
                       },
                       child: Container(
-                        width: 40,
-                        height: 40,
+                        width: isSmallScreen ? 36 : 40,
+                        height: isSmallScreen ? 36 : 40,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: isActive ? const Color(0xFF0632A1) : Colors.grey[200],
+                          color: isActive ? const Color(0xFF0632A1) : Colors.grey.shade200,
                           border: Border.all(
-                            color: isActive ? const Color(0xFF0632A1) : Colors.grey[400]!,
+                            color: isActive ? const Color(0xFF0632A1) : Colors.grey.shade400,
                             width: 2,
                           ),
                           boxShadow: [
@@ -476,25 +894,25 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
                               ? Icon(
                                   isApproved ? Icons.check : Icons.close,
                                   color: Colors.white,
-                                  size: 20,
+                                  size: isSmallScreen ? 18 : 20,
                                 )
                               : Text(
                                   '${index + 1}',
                                   style: TextStyle(
-                                    color: isActive ? Colors.white : Colors.grey[600],
+                                    color: isActive ? Colors.white : Colors.grey.shade600,
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                                    fontSize: isSmallScreen ? 14 : 16,
                                   ),
                                 ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: isSmallScreen ? 6 : 8),
                     Text(
                       stages[index],
                       style: TextStyle(
-                        fontSize: 12,
-                        color: isActive ? const Color(0xFF0632A1) : Colors.grey[600],
+                        fontSize: isSmallScreen ? 11 : 12,
+                        color: isActive ? const Color(0xFF0632A1) : Colors.grey.shade600,
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
@@ -504,14 +922,14 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
                 if (index < stages.length - 1)
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 6 : 8),
                       child: Container(
-                        height: 3,
+                        height: isSmallScreen ? 3 : 4,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              isActive ? const Color(0xFF0632A1) : Colors.grey[300]!,
-                              index + 1 <= currentStage ? const Color(0xFF0632A1) : Colors.grey[300]!,
+                              isActive ? const Color(0xFF0632A1) : Colors.grey.shade300,
+                              index + 1 <= currentStage ? const Color(0xFF0632A1) : Colors.grey.shade300,
                             ],
                           ),
                           borderRadius: BorderRadius.circular(2),
@@ -527,187 +945,407 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      body: Column(
-        children: [
-          Container(
-            height: MediaQuery.of(context).size.height * 0.2,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0632A1), Color(0xFF2E5CDB)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
-              ),
-            ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Text(
-                    'All Leave Requests',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                    ),
-                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
-                ),
-                Positioned(
-                  left: 16,
-                  top: MediaQuery.of(context).padding.top + 16,
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.chevron_left,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: const InputDecoration(
-                        hintText: 'Search by type, status, applicant...',
-                        hintStyle: TextStyle(color: Colors.grey),
-                        prefixIcon: Icon(Icons.search, color: Color(0xFF0632A1)),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 15, horizontal: 16),
-                      ),
-                      onChanged: (value) {
+  List<Leave> _getPaginatedLeaves() {
+    final startIndex = (_currentPage - 1) * _itemsPerPage;
+    final endIndex = startIndex + _itemsPerPage;
+    return _filteredLeaveRequests
+        .asMap()
+        .entries
+        .where((entry) => entry.key >= startIndex && entry.key < endIndex)
+        .map((entry) => entry.value)
+        .toList();
+  }
+
+  Widget _buildPaginationControls() {
+    final totalItems = _filteredLeaveRequests.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    final isSmallScreen = MediaQuery.of(context).size.width < 600;
+
+    if (totalItems == 0) return const SizedBox.shrink();
+
+    return SafeArea(
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 12, horizontal: isSmallScreen ? 12 : 16),
+        width: double.infinity,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: _currentPage > 1
+                    ? () {
                         setState(() {
-                          _searchQuery = value;
-                          _filterLeaveRequests();
+                          _currentPage--;
                         });
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  height: 50,
+                        _scrollController.jumpTo(0);
+                      }
+                    : null,
+                child: Container(
+                  padding: EdgeInsets.all(isSmallScreen ? 6 : 8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    color: _currentPage > 1 ? Colors.white : Colors.grey.shade200,
+                    shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 8,
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
                         spreadRadius: 1,
                       ),
                     ],
                   ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedStatus,
-                      icon: const Icon(Icons.filter_list, color: Color(0xFF0632A1)),
-                      items: ['All', 'Pending 1/2', 'Pending', 'Approved', 'Rejected'].map((status) {
-                        return DropdownMenuItem<String>(
-                          value: status,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              status,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedStatus = value!;
-                          _filterLeaveRequests();
-                        });
-                      },
-                    ),
+                  child: Icon(
+                    Icons.chevron_left,
+                    color: _currentPage > 1 ? const Color(0xFF0632A1) : Colors.grey.shade400,
+                    size: isSmallScreen ? 18 : 22,
                   ),
                 ),
-              ],
-            ).animate().fadeIn(duration: 500.ms).slideY(delay: 300.ms),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredLeaveRequests.isEmpty
-                    ? Center(
-                        child: Text(
-                          'No leave requests found',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
+              ),
+              SizedBox(width: isSmallScreen ? 8 : 12),
+              Row(
+                children: List.generate(totalPages, (index) {
+                  final pageNumber = index + 1;
+                  final isActive = _currentPage == pageNumber;
+
+                  return Padding(
+                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 3 : 4),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _currentPage = pageNumber;
+                        });
+                        _scrollController.jumpTo(0);
+                      },
+                      child: Container(
+                        width: isSmallScreen ? 28 : 32,
+                        height: isSmallScreen ? 28 : 32,
+                        decoration: BoxDecoration(
+                          color: isActive ? const Color(0xFF0632A1) : Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isActive ? const Color(0xFF0632A1) : Colors.grey.shade300,
+                            width: 1,
                           ),
-                        ).animate().fadeIn(duration: 500.ms),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        itemCount: _filteredLeaveRequests.length,
-                        itemBuilder: (context, index) {
-                          final leave = _filteredLeaveRequests[index];
-                          return _buildLeaveCard(leave, index);
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 4,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            '$pageNumber',
+                            style: TextStyle(
+                              color: isActive ? Colors.white : Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                              fontSize: isSmallScreen ? 12 : 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              SizedBox(width: isSmallScreen ? 8 : 12),
+              GestureDetector(
+                onTap: _currentPage < totalPages
+                    ? () {
+                        setState(() {
+                          _currentPage++;
+                        });
+                        _scrollController.jumpTo(0);
+                      }
+                    : null,
+                child: Container(
+                  padding: EdgeInsets.all(isSmallScreen ? 6 : 8),
+                  decoration: BoxDecoration(
+                    color: _currentPage < totalPages ? Colors.white : Colors.grey.shade200,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.chevron_right,
+                    color: _currentPage < totalPages ? const Color(0xFF0632A1) : Colors.grey.shade400,
+                    size: isSmallScreen ? 18 : 22,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isSmallScreen = MediaQuery.of(context).size.width < 600;
+    final padding = isSmallScreen ? 12.0 : 16.0;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+      drawer: _userRole == 'ADMIN'
+          ? AdminSidebar(
+              currentIndex: 15,
+              onTabChange: (index) {
+                setState(() {});
+              },
+            )
+          : null,
+      body: _isLoading
+          ? Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF0632A1),
+                strokeWidth: 3,
+              ),
+            )
+          : _userId == null
+              ? Center(
+                  child: Text(
+                    'Error: User not authenticated.',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms),
+                )
+              : CustomScrollView(
+                  slivers: [
+                    SliverAppBar(
+                      elevation: 0,
+                      backgroundColor: Colors.transparent,
+                      pinned: true,
+                      expandedHeight: isSmallScreen ? 100 : 120,
+                      automaticallyImplyLeading: false,
+                      flexibleSpace: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Container(
+                            padding: EdgeInsets.only(
+                              top: MediaQuery.of(context).padding.top + (isSmallScreen ? 8 : 12),
+                              bottom: isSmallScreen ? 12 : 16,
+                              left: padding,
+                              right: padding,
+                            ),
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Color(0xFF0632A1),
+                                  Color(0xFF0632A1),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.only(
+                                bottomLeft: Radius.circular(24),
+                                bottomRight: Radius.circular(24),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 12,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                if (_userRole != 'ADMIN')
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.arrow_back_ios,
+                                      color: Colors.white,
+                                      size: isSmallScreen ? 24 : 28,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                    },
+                                  )
+                                else
+                                  Builder(
+                                    builder: (context) => IconButton(
+                                      icon: Icon(
+                                        Icons.menu,
+                                        color: Colors.white,
+                                        size: isSmallScreen ? 24 : 28,
+                                      ),
+                                      onPressed: () {
+                                        Scaffold.of(context).openDrawer();
+                                      },
+                                    ),
+                                  ),
+                                const Spacer(),
+                                Text(
+                                  _userRole == 'ADMIN' ? 'All Leave Requests' : 'Team Leave Requests',
+                                  style: TextStyle(
+                                    fontSize: isSmallScreen ? 20 : 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const Spacer(),
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.refresh,
+                                    color: Colors.white,
+                                    size: isSmallScreen ? 24 : 28,
+                                  ),
+                                  onPressed: () {
+                                    _fetchData();
+                                  },
+                                ),
+                              ],
+                            ),
+                          ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms);
                         },
                       ),
-          ),
-        ],
-      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: padding, vertical: 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                height: isSmallScreen ? 45 : 50,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 8,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: TextField(
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    hintText: 'Search by type, status, applicant...',
+                                    hintStyle: TextStyle(color: Colors.grey.shade500),
+                                    prefixIcon: Icon(Icons.search, color: Color(0xFF0632A1)),
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.symmetric(vertical: 15, horizontal: 16),
+                                  ),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _searchQuery = value;
+                                      _filterLeaveRequests();
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: isSmallScreen ? 8 : 12),
+                            Container(
+                              height: isSmallScreen ? 45 : 50,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _selectedStatus,
+                                  icon: Icon(Icons.filter_list, color: Color(0xFF0632A1)),
+                                  items: ['All', 'Pending 0/2', 'Pending 1/2', 'Pending', 'Approved', 'Declined'].map((status) {
+                                    return DropdownMenuItem<String>(
+                                      value: status,
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12),
+                                        child: Text(
+                                          status,
+                                          style: TextStyle(
+                                            fontSize: isSmallScreen ? 13 : 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: _getStatusColor(status),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedStatus = value!;
+                                      _filterLeaveRequests();
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ).animate().fadeIn(duration: 500.ms).slideY(delay: 300.ms),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Column(
+                        children: [
+                          ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            controller: _scrollController,
+                            padding: EdgeInsets.symmetric(horizontal: padding, vertical: 8),
+                            itemCount: _getPaginatedLeaves().length,
+                            itemBuilder: (context, index) {
+                              final leave = _getPaginatedLeaves()[index];
+                              return _buildLeaveCard(leave, index);
+                            },
+                          ),
+                          _buildPaginationControls(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
     );
   }
 
   Widget _buildLeaveCard(Leave leave, int index) {
     final statusColor = _getStatusColor(leave.status);
+    final isSmallScreen = MediaQuery.of(context).size.width < 600;
 
     return Card(
       elevation: 6,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey[200]!, width: 1),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
       ),
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: EdgeInsets.only(bottom: isSmallScreen ? 12 : 16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _showLeaveDetailsDialog(context, leave),
+        onTap: () {
+          _showLeaveDetailsDialog(context, leave);
+        },
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             color: Colors.white,
             gradient: LinearGradient(
-              colors: [
-                Colors.white,
-                Colors.grey[50]!,
-              ],
+              colors: [Colors.white, Colors.grey.shade50],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -718,43 +1356,44 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(10),
+                          padding: EdgeInsets.all(isSmallScreen ? 8 : 10),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0632A1).withOpacity(0.1),
+                            color: Color(0xFF0632A1).withOpacity(0.1),
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF0632A1).withOpacity(0.1),
+                                color: Color(0xFF0632A1).withOpacity(0.1),
                                 blurRadius: 4,
                                 spreadRadius: 1,
                               ),
                             ],
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.event,
                             color: Color(0xFF0632A1),
-                            size: 22,
+                            size: isSmallScreen ? 20 : 22,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        SizedBox(width: isSmallScreen ? 8 : 12),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               leave.type,
-                              style: const TextStyle(
-                                fontSize: 20,
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 18 : 20,
                                 fontWeight: FontWeight.bold,
                                 color: Color(0xFF0632A1),
                                 letterSpacing: 0.3,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 6),
+                            SizedBox(height: 6),
                             Text(
                               'Code: ${leave.code ?? 'N/A'}',
                               style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[600],
+                                fontSize: isSmallScreen ? 12 : 13,
+                                color: Colors.grey.shade600,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -763,7 +1402,7 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
                       ],
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 10 : 12, vertical: isSmallScreen ? 5 : 6),
                       decoration: BoxDecoration(
                         color: statusColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
@@ -772,7 +1411,7 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
                       child: Text(
                         leave.status ?? 'Pending',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: isSmallScreen ? 12 : 13,
                           fontWeight: FontWeight.w600,
                           color: statusColor,
                           letterSpacing: 0.3,
@@ -781,70 +1420,88 @@ class _AllLeaveRequestsScreenState extends State<AllLeaveRequestsScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.person_outline,
-                      size: 18,
+                      size: isSmallScreen ? 16 : 18,
                       color: Color(0xFF0632A1),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: isSmallScreen ? 6 : 8),
                     Expanded(
                       child: Text(
                         'Applicant: ${leave.fullName}',
                         style: TextStyle(
-                          fontSize: 15,
-                          color: Colors.grey[800],
+                          fontSize: isSmallScreen ? 14 : 15,
+                          color: Colors.grey.shade800,
                           fontWeight: FontWeight.w500,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.calendar_today_outlined,
-                          size: 18,
+                          size: isSmallScreen ? 16 : 18,
                           color: Color(0xFF0632A1),
                         ),
-                        const SizedBox(width: 8),
+                        SizedBox(width: isSmallScreen ? 6 : 8),
                         Text(
-                          '${leave.startDate.toLocal().toString().split(' ')[0]} - ${leave.endDate.toLocal().toString().split(' ')[0]}',
+                          '${_formatDate(leave.startDate)} - ${_formatDate(leave.endDate)}',
                           style: TextStyle(
-                            fontSize: 15,
-                            color: Colors.grey[800],
+                            fontSize: isSmallScreen ? 14 : 15,
+                            color: Colors.grey.shade800,
                             fontWeight: FontWeight.w500,
+                            letterSpacing: 0.2,
                           ),
                         ),
                       ],
                     ),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.supervisor_account_outlined,
-                          size: 18,
+                          size: isSmallScreen ? 16 : 18,
                           color: Color(0xFF0632A1),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _getSupervisorName(leave.supervisor),
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Colors.grey[800],
-                            fontWeight: FontWeight.w500,
-                          ),
+                        SizedBox(width: isSmallScreen ? 6 : 8),
+                        FutureBuilder<String>(
+                          future: _getSupervisorName(leave.supervisor),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return Text(
+                                'Loading...',
+                                style: TextStyle(
+                                  fontSize: isSmallScreen ? 14 : 15,
+                                  color: Colors.grey.shade800,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              );
+                            }
+                            return Text(
+                              snapshot.data ?? 'N/A',
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 14 : 15,
+                                color: Colors.grey.shade800,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            );
+                          },
                         ),
                       ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 _buildStatusPath(leave),
               ],
             ),

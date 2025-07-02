@@ -5,8 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:mime/mime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/env.dart';
 import 'package:path/path.dart';
+import '../config/env.dart';
 import '../models/user_event.dart';
 import '../models/user.dart';
 
@@ -126,52 +126,52 @@ class UserService {
     }
   }
 
-Future<bool> switchUserToExternal(String userId) async {
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  String? token = prefs.getString('authToken');
+  Future<bool> switchUserToExternal(String userId) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('authToken');
 
-  debugPrint('UserService.switchUserToExternal - userId: $userId');
-  debugPrint('UserService.switchUserToExternal - Token: $token');
+    debugPrint('UserService.switchUserToExternal - userId: $userId');
+    debugPrint('UserService.switchUserToExternal - Token: $token');
 
-  if (token == null) {
-    debugPrint('UserService.switchUserToExternal - Error: Token is not available');
-    throw Exception('Token is not available');
-  }
-
-  final url = Uri.parse('${Env.apiUrl}/users/switchToExternal/$userId');
-  debugPrint('UserService.switchUserToExternal - Request URL: $url');
-
-  try {
-    final response = await http.patch(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
-    );
-
-    debugPrint('UserService.switchUserToExternal - Response Status: ${response.statusCode}');
-    debugPrint('UserService.switchUserToExternal - Response Body: ${response.body}');
-
-    if (response.statusCode == 200) {
-      debugPrint('UserService.switchUserToExternal - Success: User switched to external');
-      return true;
-    } else {
-      // Try to parse the response body for a detailed error message
-      try {
-        final responseBody = json.decode(response.body);
-        final errorMessage = responseBody['error'] ?? 'No error message provided';
-        debugPrint('UserService.switchUserToExternal - Error: Failed with status ${response.statusCode} - $errorMessage');
-        throw Exception('Failed to switch user to external: $errorMessage');
-      } catch (e) {
-        debugPrint('UserService.switchUserToExternal - Error parsing response body: $e');
-        throw Exception('Failed to switch user to external: Status ${response.statusCode} - ${response.body}');
-      }
+    if (token == null) {
+      debugPrint('UserService.switchUserToExternal - Error: Token is not available');
+      throw Exception('Token is not available');
     }
-  } catch (e) {
-    debugPrint('UserService.switchUserToExternal - Exception: $e');
-    throw Exception('Failed to switch user to external: $e');
+
+    final url = Uri.parse('${Env.apiUrl}/users/switchToExternal/$userId');
+    debugPrint('UserService.switchUserToExternal - Request URL: $url');
+
+    try {
+      final response = await http.patch(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      debugPrint('UserService.switchUserToExternal - Response Status: ${response.statusCode}');
+      debugPrint('UserService.switchUserToExternal - Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        debugPrint('UserService.switchUserToExternal - Success: User switched to external');
+        return true;
+      } else {
+        try {
+          final responseBody = json.decode(response.body);
+          final errorMessage = responseBody['error'] ?? 'No error message provided';
+          debugPrint('UserService.switchUserToExternal - Error: Failed with status ${response.statusCode} - $errorMessage');
+          throw Exception('Failed to switch user to external: $errorMessage');
+        } catch (e) {
+          debugPrint('UserService.switchUserToExternal - Error parsing response body: $e');
+          throw Exception('Failed to switch user to external: Status ${response.statusCode} - ${response.body}');
+        }
+      }
+    } catch (e) {
+      debugPrint('UserService.switchUserToExternal - Exception: $e');
+      throw Exception('Failed to switch user to external: $e');
+    }
   }
-}
+
   Future<bool> uploadSignature(String userId, String filePath) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('authToken');
@@ -428,6 +428,7 @@ Future<bool> switchUserToExternal(String userId) async {
     }
 
     try {
+      print('Updating user with data: ${jsonEncode(updatedUser)}');
       if (imageFile != null) {
         var request = http.MultipartRequest(
           'PUT',
@@ -451,11 +452,12 @@ Future<bool> switchUserToExternal(String userId) async {
         );
 
         var response = await request.send();
+        final responseBody = await response.stream.bytesToString();
+        print('Update user response (with image): $responseBody');
 
         if (response.statusCode == 200) {
           return true;
         } else {
-          final responseBody = await response.stream.bytesToString();
           throw Exception(json.decode(responseBody)['error'] ?? 'Failed to update user with image');
         }
       } else {
@@ -468,6 +470,8 @@ Future<bool> switchUserToExternal(String userId) async {
           body: json.encode(updatedUser),
         );
 
+        print('Update user response: ${response.body}');
+
         if (response.statusCode == 200) {
           return true;
         } else {
@@ -476,6 +480,7 @@ Future<bool> switchUserToExternal(String userId) async {
         }
       }
     } catch (e) {
+      print('Error updating user: $e');
       throw Exception('Error updating user: $e');
     }
   }
@@ -511,10 +516,11 @@ Future<bool> switchUserToExternal(String userId) async {
     required String title,
     required DateTime start,
     required DateTime end,
-    required String engineerId,
+    required String engineer,
     required String job,
     required String address,
-    required String applicantId,
+    required String applicant,
+    bool isAccepted = true,
   }) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('authToken');
@@ -527,11 +533,14 @@ Future<bool> switchUserToExternal(String userId) async {
       'title': title,
       'start': start.toIso8601String(),
       'end': end.toIso8601String(),
-      'engineer': engineerId,
+      'engineer': engineer,
       'job': job,
       'address': address,
-      'applicant': applicantId,
+      'applicant': applicant,
+      'isAccepted': isAccepted,
     });
+
+    print('createUserEvent Request Body: $body');
 
     final response = await http.post(
       Uri.parse('${Env.apiUrl}/users/setevent'),
@@ -541,6 +550,9 @@ Future<bool> switchUserToExternal(String userId) async {
       },
       body: body,
     );
+
+    print('createUserEvent Response Status: ${response.statusCode}');
+    print('createUserEvent Response Body: ${response.body}');
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
@@ -553,7 +565,7 @@ Future<bool> switchUserToExternal(String userId) async {
 
   // Get user events for a specific engineer within a date range
   Future<List<UserEvent>> getUserEvents({
-    required String engineerId,
+    required String engineer,
     required DateTime start,
     required DateTime end,
   }) async {
@@ -565,7 +577,7 @@ Future<bool> switchUserToExternal(String userId) async {
     }
 
     final uri = Uri.parse('${Env.apiUrl}/users/events').replace(queryParameters: {
-      'engineer': engineerId,
+      'engineer': engineer,
       'start': start.toIso8601String(),
       'end': end.toIso8601String(),
     });
@@ -577,6 +589,9 @@ Future<bool> switchUserToExternal(String userId) async {
       },
     );
 
+    print('getUserEvents Response Status: ${response.statusCode}');
+    print('getUserEvents Response Body: ${response.body}');
+
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       return (data as List).map((event) => UserEvent.fromJson(event)).toList();
@@ -587,57 +602,54 @@ Future<bool> switchUserToExternal(String userId) async {
   }
 
   // Get all user events (for admin or overview purposes)
-Future<List<UserEvent>> getAllUserEvents() async {
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  String? token = prefs.getString('authToken');
+  Future<List<UserEvent>> getAllUserEvents() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('authToken');
 
-  if (token == null) {
-    throw Exception('Token is not available');
-  }
-
-  try {
-    final response = await http.get(
-      Uri.parse('${Env.apiUrl}/users/allUserEvents'),
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
-    );
-
-    print('getAllUserEvents Response Status: ${response.statusCode}');
-    print('getAllUserEvents Response Body: ${response.body}');
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      
-      if (data is List) {
-        return data.map((event) {
-          if (event is Map<String, dynamic>) {
-            return UserEvent.fromJson(event);
-          } else {
-            throw Exception('Event item is not a Map: $event');
-          }
-        }).toList();
-      } else if (data is Map<String, dynamic>) {
-        // Handle case where API returns a single event wrapped in an object
-        return [UserEvent.fromJson(data)];
-      } else if (data is String) {
-        throw Exception('Unexpected string response: $data');
-      } else {
-        throw Exception('Unexpected response format: $data');
-      }
-    } else {
-      // Try to parse error message
-      try {
-        final errorData = json.decode(response.body);
-        throw Exception(errorData['error'] ?? 'Failed to fetch events: ${response.statusCode}');
-      } catch (_) {
-        throw Exception('Failed to fetch events: ${response.statusCode} - ${response.body}');
-      }
+    if (token == null) {
+      throw Exception('Token is not available');
     }
-  } catch (e) {
-    throw Exception('Failed to fetch events: $e');
+
+    try {
+      final response = await http.get(
+        Uri.parse('${Env.apiUrl}/users/allUserEvents'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      print('getAllUserEvents Response Status: ${response.statusCode}');
+      print('getAllUserEvents Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data is List) {
+          return data.map((event) {
+            if (event is Map<String, dynamic>) {
+              return UserEvent.fromJson(event);
+            } else {
+              throw Exception('Event item is not a Map: $event');
+            }
+          }).toList();
+        } else if (data is Map<String, dynamic>) {
+          return [UserEvent.fromJson(data)];
+        } else if (data is String) {
+          throw Exception('Unexpected string response: $data');
+        } else {
+          throw Exception('Unexpected response format: $data');
+        }
+      } else {
+        try {
+          final errorData = json.decode(response.body);
+          throw Exception(errorData['error'] ?? 'Failed to fetch events: ${response.statusCode}');
+        } catch (_) {
+          throw Exception('Failed to fetch events: ${response.statusCode} - ${response.body}');
+        }
+      }
+    } catch (e) {
+      throw Exception('Failed to fetch events: $e');
+    }
   }
-}
 
   // Update a user event
   Future<UserEvent> updateUserEvent({
@@ -672,6 +684,9 @@ Future<List<UserEvent>> getAllUserEvents() async {
       body: body,
     );
 
+    print('updateUserEvent Response Status: ${response.statusCode}');
+    print('updateUserEvent Response Body: ${response.body}');
+
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       return UserEvent.fromJson(data);
@@ -696,6 +711,9 @@ Future<List<UserEvent>> getAllUserEvents() async {
         'Authorization': 'Bearer $token',
       },
     );
+
+    print('deleteUserEvent Response Status: ${response.statusCode}');
+    print('deleteUserEvent Response Body: ${response.body}');
 
     if (response.statusCode == 200) {
       return true;

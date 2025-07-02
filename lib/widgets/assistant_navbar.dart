@@ -5,6 +5,7 @@ import 'package:pte_mobile/screens/feed/feed_screen.dart';
 import 'package:pte_mobile/screens/messaging/home_messages_screen.dart';
 import 'package:pte_mobile/screens/settings_screen.dart';
 import 'package:pte_mobile/screens/profile_screen.dart';
+import 'package:pte_mobile/screens/notifications_screen.dart';
 
 class AssistantNavbar extends StatelessWidget {
   final int currentIndex;
@@ -35,6 +36,12 @@ class AssistantNavbar extends StatelessWidget {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => ProfileScreen()),
+        );
+        break;
+      case 3:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => NotificationsScreen()),
         );
         break;
     }
@@ -75,39 +82,13 @@ class AssistantNavbar extends StatelessWidget {
           iconSize: 25,
           tabBackgroundColor: colorScheme.primary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          // Removed the Settings tab from the navigation bar
           tabs: [
             GButton(
               icon: LineIcons.home,
-              text: 'Feed',
+              text: 'Home',
               leading: Stack(
                 children: [
                   const Icon(LineIcons.home, size: 25),
-                  if (unreadNotificationCount > 0)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
-                        child: Text(
-                          unreadNotificationCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -145,7 +126,44 @@ class AssistantNavbar extends StatelessWidget {
                 ],
               ),
             ),
-            const GButton(icon: LineIcons.user, text: 'Profile'),
+            const GButton(
+              icon: LineIcons.user,
+              text: 'Profile',
+            ),
+            GButton(
+              icon: LineIcons.bell,
+              text: 'Notifications',
+              leading: Stack(
+                children: [
+                  const Icon(LineIcons.bell, size: 25),
+                  if (unreadNotificationCount > 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          unreadNotificationCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ],
           selectedIndex: currentIndex,
           onTabChange: (index) => _navigateToPage(context, index),

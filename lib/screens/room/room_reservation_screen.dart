@@ -5,21 +5,28 @@ import 'package:pte_mobile/models/room.dart';
 import 'package:pte_mobile/models/room_event.dart';
 import 'package:pte_mobile/services/room_service.dart';
 import 'package:pte_mobile/services/user_service.dart';
+import 'package:pte_mobile/widgets/engineer_sidebar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:pte_mobile/theme/theme.dart';
 import 'package:quickalert/quickalert.dart';
+import 'package:pte_mobile/widgets/assistant_sidebar.dart';
+import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
+import 'package:pte_mobile/screens/room/room_reservation_calendar_screen.dart';
 
 class RoomReservationScreen extends StatefulWidget {
   final DateTime? selectedDate;
   final Function(RoomEvent) onEventCreated;
   final List<RoomEvent> events;
+  final int? currentIndex;
 
   RoomReservationScreen({
     this.selectedDate,
     required this.onEventCreated,
     required this.events,
+    this.currentIndex,
   });
 
   @override
@@ -35,6 +42,7 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
   final TextEditingController _titleController = TextEditingController();
   DateTime? _startDate;
   DateTime? _endDate;
+  String? _currentUserRole;
 
   List<Room> _rooms = [];
   List<Room> _availableRooms = [];
@@ -42,13 +50,21 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchRooms();
+    _fetchCurrentUserRole();
+    _fetchRoom();
     if (widget.selectedDate != null) {
       _startDate = widget.selectedDate;
     }
   }
 
-  Future<void> _fetchRooms() async {
+  Future<void> _fetchCurrentUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserRole = prefs.getString('userRole') ?? 'Unknown Role';
+    });
+  }
+
+  Future<void> _fetchRoom() async {
     try {
       final rooms = await _roomService.getAllRooms();
       setState(() {
@@ -184,9 +200,15 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
               text: 'Reservation created successfully!',
               confirmBtnColor: Theme.of(context).colorScheme.primary,
               onConfirmBtnTap: () {
-                print('Navigating back...');
-                Navigator.pop(context);
-                Navigator.pop(context);
+                print('Navigating to RoomReservationCalendarScreen...');
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => RoomReservationCalendarScreen(
+                      currentIndex: widget.currentIndex,
+                    ),
+                  ),
+                );
               },
             );
           } catch (e) {
@@ -323,9 +345,10 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
 
         setState(() {
           _endDate = newEndDate;
+          if (_startDate != null) {
+            _updateAvailableRooms(_startDate!, newEndDate);
+          }
         });
-
-        _updateAvailableRooms(_startDate!, newEndDate);
       }
     }
   }
@@ -370,7 +393,7 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
         _endDate != null &&
         _titleController.text.isNotEmpty &&
         _selectedRoomId != null &&
-        _startDate!.isAfter(now);
+        (_startDate!.isAfter(now) || _startDate!.isAtSameMomentAs(now));
   }
 
   @override
@@ -379,36 +402,90 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
     final bookedRoomIds = _getOverlappingEvents(_startDate ?? DateTime.now(), _endDate ?? DateTime.now().add(const Duration(hours: 1))).map((event) => event.roomId).toSet();
 
     return Scaffold(
+      drawer: _currentUserRole == 'ADMIN'
+          ? AdminSidebar(
+              currentIndex: widget.currentIndex ?? 0,
+              onTabChange: (index) {
+                setState(() {});
+              },
+            )
+          : _currentUserRole == 'LAB-MANAGER'
+              ? LabManagerSidebar(
+                  currentIndex: widget.currentIndex ?? 0,
+                  onTabChange: (index) {
+                    setState(() {});
+                  },
+                )
+              : _currentUserRole == 'ENGINEER'
+                  ? EngineerSidebar(
+                      currentIndex: widget.currentIndex ?? 0,
+                      onTabChange: (index) {
+                        setState(() {});
+                      },
+                    )
+                  : AssistantSidebar(
+                      currentIndex: widget.currentIndex ?? 0,
+                      onTabChange: (index) {
+                        setState(() {
+                          if (Scaffold.of(context).isDrawerOpen) {
+                            Scaffold.of(context).closeDrawer();
+                          }
+                        });
+                      },
+                    ),
       body: Column(
         children: [
           Container(
-            height: MediaQuery.of(context).size.height * 0.2,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
-              ),
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 16,
+              bottom: 24,
+              left: 16,
+              right: 16,
             ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Text(
-                    'Reserve a Room',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onPrimary,
-                    ),
-                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Theme.of(context).colorScheme.primary,
+                  Theme.of(context).colorScheme.primary
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
-                Positioned(
-                  left: 16,
-                  top: MediaQuery.of(context).padding.top + 16,
-                  child: IconButton(
-                    icon: const Icon(Icons.chevron_left, color: Colors.white, size: 32),
-                    onPressed: () => Navigator.pop(context),
-                  ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Builder(
+                      builder: (context) => IconButton(
+                        icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+                        onPressed: () => Scaffold.of(context).openDrawer(),
+                      ),
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          'Reserve a Room',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -467,146 +544,148 @@ class _RoomReservationScreenState extends State<RoomReservationScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    _buildCard(
-                      child: TextFormField(
-                        controller: _titleController,
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-                        decoration: InputDecoration(
-                          labelText: 'Title',
-                          labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
-                          prefixIcon: Icon(Icons.title, color: Theme.of(context).colorScheme.primary),
-                          border: InputBorder.none,
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter a title';
-                          }
-                          return null;
-                        },
-                      ),
-                    ).animate().fadeIn(duration: 500.ms).slideY(delay: 500.ms),
-                    const SizedBox(height: 16),
-                    _buildCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Select Room',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                            ),
+                    if (datesSelected) ...[
+                      const SizedBox(height: 16),
+                      _buildCard(
+                        child: TextFormField(
+                          controller: _titleController,
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                          decoration: InputDecoration(
+                            labelText: 'Title',
+                            labelStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
+                            prefixIcon: Icon(Icons.title, color: Theme.of(context).colorScheme.primary),
+                            border: InputBorder.none,
                           ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            height: 100,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _rooms.length,
-                              itemBuilder: (context, index) {
-                                final room = _rooms[index];
-                                final isBooked = bookedRoomIds.contains(room.id);
-                                final isSelected = _selectedRoomId == room.id;
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter a title';
+                            }
+                            return null;
+                          },
+                        ),
+                      ).animate().fadeIn(duration: 500.ms).slideY(delay: 500.ms),
+                      const SizedBox(height: 16),
+                      _buildCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Select Room',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 100,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _rooms.length,
+                                itemBuilder: (context, index) {
+                                  final room = _rooms[index];
+                                  final isBooked = bookedRoomIds.contains(room.id);
+                                  final isSelected = _selectedRoomId == room.id;
 
-                                return Padding(
-                                  padding: const EdgeInsets.only(right: 12),
-                                  child: GestureDetector(
-                                    onTap: isBooked
-                                        ? null
-                                        : () {
-                                            setState(() {
-                                              _selectedRoomId = room.id;
-                                            });
-                                          },
-                                    child: Container(
-                                      width: 150,
-                                      decoration: BoxDecoration(
-                                        color: isBooked
-                                            ? Colors.grey.shade300
-                                            : isSelected
-                                                ? Theme.of(context).colorScheme.primary
-                                                : Theme.of(context).colorScheme.background,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
-                                            blurRadius: 10,
-                                            spreadRadius: 2,
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 12),
+                                    child: GestureDetector(
+                                      onTap: isBooked
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                _selectedRoomId = room.id;
+                                              });
+                                            },
+                                      child: Container(
+                                        width: 150,
+                                        decoration: BoxDecoration(
+                                          color: isBooked
+                                              ? Colors.grey.shade300
+                                              : isSelected
+                                                  ? Theme.of(context).colorScheme.primary
+                                                  : Theme.of(context).colorScheme.background,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
                                           ),
-                                        ],
-                                      ),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(12),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Text(
-                                              room.label,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: isBooked
-                                                    ? Theme.of(context).colorScheme.onSurface.withOpacity(0.4)
-                                                    : isSelected
-                                                        ? Theme.of(context).colorScheme.onPrimary
-                                                        : Theme.of(context).colorScheme.onSurface,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              room.location,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: isBooked
-                                                    ? Theme.of(context).colorScheme.onSurface.withOpacity(0.4)
-                                                    : isSelected
-                                                        ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.7)
-                                                        : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                                              ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
+                                              blurRadius: 10,
+                                              spreadRadius: 2,
                                             ),
                                           ],
                                         ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                room.label,
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: isBooked
+                                                      ? Theme.of(context).colorScheme.onSurface.withOpacity(0.4)
+                                                      : isSelected
+                                                          ? Theme.of(context).colorScheme.onPrimary
+                                                          : Theme.of(context).colorScheme.onSurface,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                room.location,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: isBooked
+                                                      ? Theme.of(context).colorScheme.onSurface.withOpacity(0.4)
+                                                      : isSelected
+                                                          ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.7)
+                                                          : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ).animate().fadeIn(duration: 500.ms).slideY(delay: 600.ms),
+                      const SizedBox(height: 24),
+                      Container(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _isFormComplete() ? _submitForm : null,
+                          child: Text(
+                            'Reserve Room',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: _isFormComplete()
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(context).colorScheme.onSecondary,
                             ),
                           ),
-                        ],
-                      ),
-                    ).animate().fadeIn(duration: 500.ms).slideY(delay: 600.ms),
-                    const SizedBox(height: 24),
-                    Container(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isFormComplete() ? _submitForm : null,
-                        child: Text(
-                          'Reserve Room',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: _isFormComplete()
-                                ? Theme.of(context).colorScheme.onPrimary
-                                : Theme.of(context).colorScheme.onSecondary,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _isFormComplete()
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.secondary,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _isFormComplete()
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.secondary,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ).animate().fadeIn(duration: 500.ms).slideY(delay: 700.ms),
+                      ).animate().fadeIn(duration: 500.ms).slideY(delay: 700.ms),
+                    ],
                   ],
                 ),
               ),

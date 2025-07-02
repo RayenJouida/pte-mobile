@@ -79,7 +79,7 @@ class UserDetailsScreen extends StatelessWidget {
                       Divider(),
                       _buildDetailRow(Icons.verified_user, 'Status', user['isEnabled'] ?? 'N/A', colorScheme),
                       Divider(),
-                      _buildDetailRow(Icons.business, 'Department', user['departement'] ?? 'N/A', colorScheme),
+                      _buildDetailRow(Icons.business, 'departement', user['departement'] ?? 'N/A', colorScheme),
                       Divider(),
                       _buildDetailRow(
                         Icons.directions_car,

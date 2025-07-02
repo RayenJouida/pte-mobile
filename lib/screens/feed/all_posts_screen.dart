@@ -19,34 +19,54 @@ class AllPostsScreen extends StatefulWidget {
   _AllPostsScreenState createState() => _AllPostsScreenState();
 }
 
-class _AllPostsScreenState extends State<AllPostsScreen> with TickerProviderStateMixin {
+class _AllPostsScreenState extends State<AllPostsScreen> with SingleTickerProviderStateMixin {
   final PostService _postService = PostService();
   final UserService _userService = UserService();
   final AuthService _authService = AuthService();
   List<Post> _allPosts = [];
-  List<Post> _filteredPosts = [];
+  List<Post> _pendingPosts = [];
   List<String> _likedPostIds = [];
   bool _isLoading = true;
-  String _selectedFilter = 'All'; // Default filter
+  late TabController _tabController;
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
   late ScrollController _scrollController;
+  bool _showFloatingButton = true;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _scrollController = ScrollController();
+    _scrollController.addListener(_scrollListener);
     _loadInitialData();
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.userScrollDirection == ScrollDirection.reverse) {
+      if (_showFloatingButton) {
+        setState(() {
+          _showFloatingButton = false;
+        });
+      }
+    } else {
+      if (!_showFloatingButton) {
+        setState(() {
+          _showFloatingButton = true;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_scrollListener);
     _scrollController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _loadInitialData() async {
-    await _fetchPosts();
-    await _fetchLikedPosts();
+    await Future.wait([_fetchPosts(), _fetchLikedPosts()]);
   }
 
   Future<void> _fetchPosts() async {
@@ -55,7 +75,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> with TickerProviderStat
       if (mounted) {
         setState(() {
           _allPosts = posts;
-          _applyFilter(_selectedFilter);
+          _pendingPosts = posts.where((post) => !post.isAccepted).toList();
           _isLoading = false;
         });
       }
@@ -82,17 +102,93 @@ class _AllPostsScreenState extends State<AllPostsScreen> with TickerProviderStat
     }
   }
 
-  void _applyFilter(String filter) {
-    setState(() {
-      _selectedFilter = filter;
-      if (filter == 'All') {
-        _filteredPosts = _allPosts;
-      } else {
-        _filteredPosts = _allPosts.where((post) {
-          return post.status.toLowerCase() == filter.toLowerCase();
-        }).toList();
+  Future<void> _toggleLikePost(String postId) async {
+    try {
+      final updatedPost = await _postService.likePost(postId);
+      if (mounted) {
+        setState(() {
+          final isLiked = _likedPostIds.contains(postId);
+          if (isLiked) {
+            _likedPostIds.remove(postId);
+          } else {
+            _likedPostIds.add(postId);
+          }
+          final postIndex = _allPosts.indexWhere((p) => p.id == postId);
+          if (postIndex != -1) {
+            _allPosts[postIndex] = updatedPost;
+          }
+          _pendingPosts = _allPosts.where((post) => !post.isAccepted).toList();
+        });
+        _showLikedMessage(!_likedPostIds.contains(postId));
       }
-    });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to like/unlike"),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _approvePost(String postId) async {
+    try {
+      await _postService.managerAcceptPost(postId);
+      await _fetchPosts(); // Refresh posts after approval
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Post approved"),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to approve post"),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _declinePost(String postId) async {
+    try {
+      await _postService.managerDeclinePost(postId);
+      await _fetchPosts(); // Refresh posts after decline
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Post declined"),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to decline post"),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
   }
 
   void _showLikedMessage(bool isLiked) {
@@ -117,80 +213,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> with TickerProviderStat
     }
   }
 
-  Future<void> _toggleLikePost(String postId) async {
-    try {
-      final updatedPost = await _postService.likePost(postId);
-      if (mounted) {
-        setState(() {
-          final wasLiked = _likedPostIds.contains(postId);
-          if (wasLiked) {
-            _likedPostIds.remove(postId);
-          } else {
-            _likedPostIds.add(postId);
-          }
-          final postIndex = _allPosts.indexWhere((p) => p.id == postId);
-          if (postIndex != -1) {
-            _allPosts[postIndex] = updatedPost;
-          }
-          _applyFilter(_selectedFilter); // Reapply filter to update _filteredPosts
-          _showLikedMessage(!wasLiked);
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to like/unlike"),
-            backgroundColor: Colors.red.shade700,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
-      }
-    }
-  }
-
-  Widget _buildFilterChips() {
-    final filters = ['All', 'Accepted', 'Pending', 'Denied'];
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: filters.map((filter) {
-            final isSelected = _selectedFilter == filter;
-            return Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(
-                  filter,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : lightColorScheme.primary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                selected: isSelected,
-                onSelected: (selected) {
-                  if (selected) _applyFilter(filter);
-                },
-                selectedColor: lightColorScheme.primary,
-                backgroundColor: Colors.grey.shade100,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(color: lightColorScheme.primary.withOpacity(0.2)),
-                ),
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                elevation: isSelected ? 2 : 0,
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(String tab) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -202,14 +225,14 @@ class _AllPostsScreenState extends State<AllPostsScreen> with TickerProviderStat
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.feed_outlined,
+              tab == 'All Posts' ? Icons.feed_outlined : Icons.hourglass_empty,
               size: 50,
               color: lightColorScheme.primary,
             ),
           ),
           SizedBox(height: 20),
           Text(
-            'No posts found',
+            tab == 'All Posts' ? 'No posts found' : 'No pending posts',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -218,9 +241,9 @@ class _AllPostsScreenState extends State<AllPostsScreen> with TickerProviderStat
           ),
           SizedBox(height: 8),
           Text(
-            _selectedFilter == 'All'
+            tab == 'All Posts'
                 ? 'There are no posts available.'
-                : 'No $_selectedFilter posts available.',
+                : 'No pending posts awaiting your review.',
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey.shade600,
@@ -269,8 +292,22 @@ class _AllPostsScreenState extends State<AllPostsScreen> with TickerProviderStat
           SizedBox(width: 8),
         ],
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Container(height: 1, color: Colors.grey.shade200),
+          preferredSize: Size.fromHeight(56),
+          child: Container(
+            color: Colors.white,
+            child: TabBar(
+              controller: _tabController,
+              indicatorColor: lightColorScheme.primary,
+              labelColor: lightColorScheme.primary,
+              unselectedLabelColor: Colors.grey.shade600,
+              labelStyle: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+              tabs: [
+                Tab(text: 'All Posts'),
+                Tab(text: 'Pending Posts'),
+              ],
+            ),
+          ),
         ),
       ),
       drawer: AdminSidebar(
@@ -297,68 +334,100 @@ class _AllPostsScreenState extends State<AllPostsScreen> with TickerProviderStat
                 ],
               ),
             )
-          : Column(
+          : TabBarView(
+              controller: _tabController,
               children: [
-                _buildFilterChips(),
-                Expanded(
-                  child: RefreshIndicator(
-                    key: _refreshIndicatorKey,
-                    onRefresh: _loadInitialData,
-                    color: lightColorScheme.primary,
-                    child: _filteredPosts.isEmpty
-                        ? _buildEmptyState()
-                        : ListView.builder(
-                            controller: _scrollController,
-                            padding: EdgeInsets.only(top: 12, bottom: 80),
-                            itemCount: _filteredPosts.length,
-                            itemBuilder: (_, index) {
-                              final post = _filteredPosts.reversed.toList()[index];
-                              return Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: 12,
-                                  left: 12,
-                                  right: 12,
-                                ),
-                                child: PostCard(
-                                  post: post,
-                                  onSaveToggled: (_) {}, // Save functionality not needed for admin view
-                                  onLikeToggled: _toggleLikePost,
-                                  isSaved: false,
-                                  isLiked: _likedPostIds.contains(post.id),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
+                RefreshIndicator(
+                  key: _refreshIndicatorKey,
+                  onRefresh: _loadInitialData,
+                  color: lightColorScheme.primary,
+                  child: _allPosts.isEmpty
+                      ? _buildEmptyState('All Posts')
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: EdgeInsets.only(top: 12, bottom: 80),
+                          itemCount: _allPosts.length,
+                          itemBuilder: (_, index) {
+                            final post = _allPosts.reversed.toList()[index];
+                            return Padding(
+                              padding: EdgeInsets.only(bottom: 12, left: 12, right: 12),
+                              child: AdminPostCard(
+                                post: post,
+                                onLikeToggled: _toggleLikePost,
+                                isLiked: _likedPostIds.contains(post.id),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                RefreshIndicator(
+                  key: _refreshIndicatorKey,
+                  onRefresh: _loadInitialData,
+                  color: lightColorScheme.primary,
+                  child: _pendingPosts.isEmpty
+                      ? _buildEmptyState('Pending Posts')
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: EdgeInsets.only(top: 12, bottom: 80),
+                          itemCount: _pendingPosts.length,
+                          itemBuilder: (_, index) {
+                            final post = _pendingPosts[index];
+                            return Padding(
+                              padding: EdgeInsets.only(bottom: 12, left: 12, right: 12),
+                              child: AdminPostCard(
+                                post: post,
+                                onLikeToggled: _toggleLikePost,
+                                isLiked: _likedPostIds.contains(post.id),
+                                onApprove: _approvePost,
+                                onDecline: _declinePost,
+                              ),
+                            );
+                          },
+                        ),
                 ),
               ],
             ),
+      floatingActionButton: AnimatedSlide(
+        duration: Duration(milliseconds: 300),
+        offset: _showFloatingButton ? Offset.zero : Offset(0, 2),
+        child: AnimatedOpacity(
+          duration: Duration(milliseconds: 300),
+          opacity: _showFloatingButton ? 1.0 : 0.0,
+          child: FloatingActionButton(
+            onPressed: null, // No create action for admin view
+            backgroundColor: lightColorScheme.primary,
+            foregroundColor: Colors.white,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Icon(Icons.refresh, size: 28),
+          ),
+        ),
+      ),
     );
   }
 }
 
-// Reusing PostCard and related widgets from FeedScreen (assumed to be in a shared location)
-class PostCard extends StatefulWidget {
+class AdminPostCard extends StatefulWidget {
   final Post post;
-  final Function(String) onSaveToggled;
   final Function(String) onLikeToggled;
-  final bool isSaved;
   final bool isLiked;
+  final Function(String)? onApprove;
+  final Function(String)? onDecline;
 
-  const PostCard({
+  const AdminPostCard({
     Key? key,
     required this.post,
-    required this.onSaveToggled,
     required this.onLikeToggled,
-    required this.isSaved,
     required this.isLiked,
+    this.onApprove,
+    this.onDecline,
   }) : super(key: key);
 
   @override
-  State<PostCard> createState() => _PostCardState();
+  State<AdminPostCard> createState() => _AdminPostCardState();
 }
 
-class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin {
+class _AdminPostCardState extends State<AdminPostCard> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   bool _isImageExpanded = false;
@@ -463,20 +532,24 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
                           Container(
                             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: widget.post.status.toLowerCase() == 'accepted'
-                                  ? Colors.green.shade100
-                                  : widget.post.status.toLowerCase() == 'pending'
-                                      ? Colors.orange.shade100
+                              color: !widget.post.isAccepted
+                                  ? Colors.orange.shade100
+                                  : widget.post.isAccepted
+                                      ? Colors.green.shade100
                                       : Colors.red.shade100,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              widget.post.status,
+                              !widget.post.isAccepted
+                                  ? 'Pending'
+                                  : widget.post.isAccepted
+                                      ? 'Accepted'
+                                      : 'Declined',
                               style: TextStyle(
-                                color: widget.post.status.toLowerCase() == 'accepted'
-                                    ? Colors.green.shade800
-                                    : widget.post.status.toLowerCase() == 'pending'
-                                        ? Colors.orange.shade800
+                                color: !widget.post.isAccepted
+                                    ? Colors.orange.shade800
+                                    : widget.post.isAccepted
+                                        ? Colors.green.shade800
                                         : Colors.red.shade800,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -622,19 +695,30 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
                   onPressed: _showCommentsSheet,
                 ),
 
-                Spacer(),
-
-                // Save button (disabled for admin view)
-                IconButton(
-                  icon: Icon(
-                    widget.isSaved ? Icons.bookmark : Icons.bookmark_border,
-                    color: Colors.grey.shade400,
-                    size: 22,
+                if (widget.onApprove != null && widget.onDecline != null) ...[
+                  Spacer(),
+                  ElevatedButton(
+                    onPressed: () => widget.onApprove!(widget.post.id),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text('Approve', style: TextStyle(fontSize: 12)),
                   ),
-                  onPressed: null,
-                  padding: EdgeInsets.zero,
-                  constraints: BoxConstraints(),
-                ),
+                  SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => widget.onDecline!(widget.post.id),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text('Decline', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
               ],
             ),
           ),

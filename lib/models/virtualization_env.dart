@@ -16,7 +16,8 @@ class VirtualizationEnv {
   final String goals;
   final String status;
   final bool isAccepted;
-  final String applicantId; // Changed to store just the ID string
+  final String applicantId;
+  DateTime? localCreationTime;
 
   VirtualizationEnv({
     required this.id,
@@ -37,15 +38,14 @@ class VirtualizationEnv {
     required this.status,
     required this.isAccepted,
     required this.applicantId,
+    this.localCreationTime,
   });
 
   factory VirtualizationEnv.fromJson(Map<String, dynamic> json) {
-    // Handle both cases where applicant might be an object or just an ID string
     final applicant = json['applicant'];
     final applicantId = applicant is String 
         ? applicant 
         : (applicant is Map ? applicant['_id']?.toString() ?? '' : '');
-
     return VirtualizationEnv(
       id: json['_id']?.toString() ?? '',
       firstName: json['firstName']?.toString() ?? '',
@@ -87,7 +87,51 @@ class VirtualizationEnv {
       'goals': goals,
       'status': status,
       'isAccepted': isAccepted,
-      'applicant': applicantId, // Just send the ID string
+      'applicant': applicantId,
     };
+  }
+
+  VirtualizationEnv copyWith({
+    String? id,
+    String? firstName,
+    String? lastName,
+    String? email,
+    String? departement,
+    String? code,
+    String? type,
+    bool? backup,
+    String? ram,
+    String? disk,
+    String? processor,
+    bool? dhcp,
+    DateTime? start,
+    DateTime? end,
+    String? goals,
+    String? status,
+    bool? isAccepted,
+    String? applicantId,
+    DateTime? localCreationTime,
+  }) {
+    return VirtualizationEnv(
+      id: id ?? this.id,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
+      email: email ?? this.email,
+      departement: departement ?? this.departement,
+      code: code ?? this.code,
+      type: type ?? this.type,
+      backup: backup ?? this.backup,
+      ram: ram ?? this.ram,
+      disk: disk ?? this.disk,
+      processor: processor ?? this.processor,
+      dhcp: dhcp ?? this.dhcp,
+      start: start ?? this.start,
+      end: end ?? this.end,
+      goals: goals ?? this.goals,
+      status: status ?? this.status,
+      isAccepted: isAccepted ?? this.isAccepted,
+      applicantId: applicantId ?? this.applicantId,
+      localCreationTime: localCreationTime ?? this.localCreationTime,
+    );
   }
 }

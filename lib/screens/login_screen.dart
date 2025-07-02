@@ -49,10 +49,35 @@ class _LoginScreenState extends State<LoginScreen> {
 
       try {
         final user = await _authService.login(email, password);
-        print('User roles: ${user?.roles}');
+        print('User ***************: ${user}');
+        print('User roles ****************** : ${user?.roles}');
 
         if (user != null) {
-          _showSuccessDialog(context, user);
+          if (user.external == true) {
+            Alert(
+              context: context,
+              style: _alertStyle,
+              type: AlertType.warning,
+              title: "Access Revoked",
+              desc: "Your access has been revoked as you are no longer a Prologic member. If you believe this is a mistake, please contact support at support@prologic.com.",
+              buttons: [
+                DialogButton(
+                  child: Text(
+                    "OK",
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                  gradient: LinearGradient(
+                    colors: [Color(0xFFF57C00), Color(0xFFFFA726)],
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  width: 120,
+                  radius: BorderRadius.circular(10),
+                ),
+              ],
+            ).show();
+          } else {
+            _showSuccessDialog(context, user);
+          }
         }
       } catch (e) {
         print('Exception: $e');
@@ -168,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
 
-    // Automatically navigate after 1.5 seconds (reduced from 2)
+    // Automatically navigate after 1.5 seconds
     Future.delayed(Duration(milliseconds: 1500), () {
       Navigator.pop(context); // Close the dialog
       if (user.roles.contains("ADMIN") || 
@@ -201,23 +226,23 @@ class _LoginScreenState extends State<LoginScreen> {
                   Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Illustration Image (reduced height)
+                      // Illustration Image
                       Image.asset(
                         'assets/illustrations/login.jpg',
-                        height: 220, // Reduced from 280
+                        height: 220,
                       ).animate().fade(duration: 400.ms),
 
-                      // Prologic Logo (adjusted position)
+                      // Prologic Logo
                       Positioned(
-                        top: 180, // Adjusted for new illustration height
+                        top: 180,
                         child: Image.asset(
                           'assets/images/prologic.png',
-                          height: 60, // Slightly reduced
+                          height: 60,
                         ).animate().fade(duration: 500.ms),
                       ),
                     ],
                   ),
-                  SizedBox(height: 40), // Reduced from 60
+                  SizedBox(height: 40),
 
                   // Form with improved spacing and styling
                   Form(
@@ -255,7 +280,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             return null;
                           },
                         ).animate().fade(duration: 400.ms),
-                        SizedBox(height: 20), // Reduced from 30
+                        SizedBox(height: 20),
 
                         // Password Field with refined styling
                         TextFormField(
@@ -301,7 +326,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             return null;
                           },
                         ).animate().fade(duration: 500.ms),
-                        SizedBox(height: 30), // Reduced from 50
+                        SizedBox(height: 30),
 
                         // Forgot Password link moved above login button for better UX
                         Align(
@@ -361,7 +386,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             minimumSize: Size(double.infinity, 48),
                           ),
                         ).animate().fade(duration: 600.ms),
-                        SizedBox(height: 30), // Reduced from 40
+                        SizedBox(height: 30),
 
                         // Divider with text for cleaner separation
                         Row(

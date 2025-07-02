@@ -4,6 +4,9 @@ class Vehicle {
   final String? registrationNumber;
   final String? type;
   final String? userId;
+  final List<LogEntry>? log;
+  final int? kmTotal;
+  final bool? available;
 
   Vehicle({
     this.id,
@@ -11,6 +14,9 @@ class Vehicle {
     this.registrationNumber,
     this.type,
     this.userId,
+    this.log,
+    this.kmTotal,
+    this.available,
   });
 
   // Convert from JSON
@@ -20,7 +26,10 @@ class Vehicle {
       model: json['model'] as String?,
       registrationNumber: json['registration_number'] as String?,
       type: json['type'] as String?,
-      userId: json['user'] as String?,
+      userId: json['user'] != null ? json['user'].toString() : null,
+      log: (json['log'] as List<dynamic>?)?.map((logItem) => LogEntry.fromJson(logItem)).toList(),
+      kmTotal: json['kmTotal'] as int?,
+      available: json['available'] as bool?,
     );
   }
 
@@ -31,6 +40,36 @@ class Vehicle {
       'registration_number': registrationNumber,
       'type': type,
       'user': userId,
+      'kmTotal': kmTotal,
+      'available': available,
+    };
+  }
+}
+
+class LogEntry {
+  final String? eventId;
+  final int? kilometrage;
+  final DateTime? reservationDate;
+
+  LogEntry({
+    this.eventId,
+    this.kilometrage,
+    this.reservationDate,
+  });
+
+  factory LogEntry.fromJson(Map<String, dynamic> json) {
+    return LogEntry(
+      eventId: json['event'] != null ? json['event'].toString() : null,
+      kilometrage: json['kilometrage'] as int?,
+      reservationDate: json['reservationDate'] != null ? DateTime.parse(json['reservationDate'].toString()) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'event': eventId,
+      'kilometrage': kilometrage,
+      'reservationDate': reservationDate?.toIso8601String(),
     };
   }
 }

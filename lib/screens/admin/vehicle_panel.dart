@@ -77,7 +77,6 @@ class _VehiclePanelState extends State<VehiclePanel> {
 
     for (var event in _events) {
       if (vehicleEventCounts.containsKey(event.vehicleId)) {
-        vehicleEventCounts[event.vehicleId] = vehicleEventCounts[event.vehicleId]! + 1;
       }
     }
 
@@ -93,10 +92,7 @@ class _VehiclePanelState extends State<VehiclePanel> {
   List<LineChartData> _getEventTrends() {
     final Map<String, int> eventTrends = {};
 
-    for (var event in _events) {
-      final month = '${event.start.year}-${event.start.month}';
-      eventTrends[month] = (eventTrends[month] ?? 0) + 1;
-    }
+    
 
     return eventTrends.entries
         .map((entry) => LineChartData(entry.key, entry.value))

@@ -1,10 +1,13 @@
-class Message {
-  final String? id; // Make fields nullable
+import 'package:equatable/equatable.dart';
+
+class Message extends Equatable {
+  final String? id;
   final String? senderId;
   final String? receiverId;
   final String? content;
   final DateTime? timestamp;
-  final bool isSent; // Add isSent field to track sent messages
+  final bool isSent;
+  final bool read;
 
   Message({
     this.id,
@@ -12,28 +15,34 @@ class Message {
     this.receiverId,
     this.content,
     this.timestamp,
-    this.isSent = false, // Default value is false (message is not sent)
+    this.isSent = false,
+    this.read = false,
   });
 
-factory Message.fromJson(Map<String, dynamic> json) {
-  return Message(
-    id: json['_id'] as String?,
-    senderId: json['sender'] as String?,
-    receiverId: json['receiver'] as String?,
-    content: json['content'] as String?,
-    timestamp: json['timestamp'] != null ? DateTime.parse(json['timestamp']) : null,
-    isSent: json['isSent'] as bool? ?? false,  // Ensure a default value of false if not provided
-  );
-}
+  factory Message.fromJson(Map<String, dynamic> json) {
+    return Message(
+      id: json['_id'] as String?,
+      senderId: json['sender'] as String?,
+      receiverId: json['receiver'] as String?,
+      content: json['content'] as String?,
+      timestamp: json['timestamp'] != null ? DateTime.parse(json['timestamp']) : null,
+      isSent: json['isSent'] as bool? ?? false,
+      read: json['read'] as bool? ?? false,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
-      'senderId': senderId,
-      'receiverId': receiverId,
+      '_id': id,
+      'sender': senderId,
+      'receiver': receiverId,
       'content': content,
       'timestamp': timestamp?.toIso8601String(),
-      'isSent': isSent, // Add isSent to JSON
+      'isSent': isSent,
+      'read': read,
     };
   }
+
+  @override
+  List<Object?> get props => [id, senderId, receiverId, content, timestamp, isSent, read];
 }

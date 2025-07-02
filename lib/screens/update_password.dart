@@ -3,6 +3,10 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:pte_mobile/services/user_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
+import 'package:pte_mobile/widgets/assistant_sidebar.dart';
+import 'package:pte_mobile/widgets/engineer_sidebar.dart';
 
 class UpdatePasswordScreen extends StatefulWidget {
   const UpdatePasswordScreen({Key? key}) : super(key: key);
@@ -22,6 +26,7 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
   bool _isLoading = false;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
+  String? _userRole;
   
   // Password strength indicators
   double _passwordStrength = 0.0;
@@ -33,6 +38,7 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
     super.initState();
     _newPasswordController.addListener(_checkPasswordStrength);
     _confirmPasswordController.addListener(_validateConfirmPassword);
+    _fetchUserRole();
   }
 
   @override
@@ -40,6 +46,13 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _userRole = prefs.getString('userRole') ?? 'Unknown Role';
+    });
   }
 
   void _checkPasswordStrength() {
@@ -293,15 +306,60 @@ class _UpdatePasswordScreenState extends State<UpdatePasswordScreen> {
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w600,
+            color: Colors.white, // Text color set to white
           ),
         ),
         backgroundColor: Color(0xFF0632A1),
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        centerTitle: true, // Center the title
+        leading: Row(
+          children: [
+            IconButton(
+              icon: Icon(
+                Icons.menu,
+                color: Colors.white,
+                size: 24,
+              ),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.chevron_left, // Replaced arrow_back with chevron_left
+                color: Colors.white, // Icon color set to white
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
         ),
+        leadingWidth: 96, // Increased width to accommodate two icons
       ),
+      drawer: _userRole == 'ADMIN'
+          ? AdminSidebar(
+              currentIndex: 0, // Adjust index as needed
+              onTabChange: (index) {
+                setState(() {});
+              },
+            )
+          : _userRole == 'LAB-MANAGER'
+              ? LabManagerSidebar(
+                  currentIndex: 0,
+                  onTabChange: (index) {
+                    setState(() {});
+                  },
+                )
+              : _userRole == 'ENGINEER'
+                  ? EngineerSidebar(
+                      currentIndex: 0,
+                      onTabChange: (index) {
+                        setState(() {});
+                      },
+                    )
+                  : AssistantSidebar(
+                      currentIndex: 0,
+                      onTabChange: (index) {
+                        setState(() {});
+                      },
+                    ),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(

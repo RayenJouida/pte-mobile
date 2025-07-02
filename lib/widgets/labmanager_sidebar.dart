@@ -4,6 +4,7 @@ import 'package:line_icons/line_icons.dart';
 import 'package:pte_mobile/screens/labmanager/lab_request.dart';
 import 'package:pte_mobile/screens/labmanager/request_lab.dart';
 import 'package:pte_mobile/screens/labmanager/requests_by_user_id.dart';
+import 'package:pte_mobile/screens/labmanager/home_lab_screen.dart';
 import 'package:pte_mobile/screens/room/all_rooms.dart';
 import 'package:pte_mobile/screens/room/room_reservation_screen.dart';
 import 'package:pte_mobile/screens/room/room_reservation_calendar_screen.dart';
@@ -37,7 +38,6 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
   bool _isRoomsExpanded = false;
   bool _isLabsExpanded = false;
   bool _isLeaveExpanded = false;
-  bool _isProfileExpanded = false;
   late AnimationController _animationController;
 
   final Color primaryBlue = const Color(0xFF2563EB);
@@ -52,18 +52,14 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-
-    // Adjust index ranges for expanded sections
     if (widget.currentIndex == 0) {
       _isUsersExpanded = true;
     } else if (widget.currentIndex >= 1 && widget.currentIndex <= 3) {
       _isRoomsExpanded = true;
-    } else if (widget.currentIndex >= 4 && widget.currentIndex <= 6) { // Adjusted for "See all requests"
+    } else if (widget.currentIndex >= 4 && widget.currentIndex <= 7) {
       _isLabsExpanded = true;
-    } else if (widget.currentIndex >= 7 && widget.currentIndex <= 8) { // Shifted due to new Labs sub-item
+    } else if (widget.currentIndex >= 8 && widget.currentIndex <= 9) {
       _isLeaveExpanded = true;
-    } else if (widget.currentIndex >= 9 && widget.currentIndex <= 10) { // Shifted due to new Labs sub-item
-      _isProfileExpanded = true;
     }
   }
 
@@ -74,9 +70,8 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
       setState(() {
         _isUsersExpanded = widget.currentIndex == 0;
         _isRoomsExpanded = widget.currentIndex >= 1 && widget.currentIndex <= 3;
-        _isLabsExpanded = widget.currentIndex >= 4 && widget.currentIndex <= 6; // Adjusted for "See all requests"
-        _isLeaveExpanded = widget.currentIndex >= 7 && widget.currentIndex <= 8; // Shifted
-        _isProfileExpanded = widget.currentIndex >= 9 && widget.currentIndex <= 10; // Shifted
+        _isLabsExpanded = widget.currentIndex >= 4 && widget.currentIndex <= 7;
+        _isLeaveExpanded = widget.currentIndex >= 8 && widget.currentIndex <= 9;
       });
     }
   }
@@ -88,7 +83,7 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
   }
 
   Future<void> _navigateToPage(BuildContext context, Widget page, int index) async {
-    Navigator.pop(context); // Close the drawer
+    Navigator.pop(context);
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => page),
@@ -108,7 +103,6 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
         );
         return;
       }
-
       final userData = await _userService.getUserById(userId);
       final user = User.fromJson(userData);
       await _navigateToPage(context, EditProfileScreen(user: user), index);
@@ -123,6 +117,22 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     Navigator.pushReplacementNamed(context, '/login');
+  }
+
+  Future<int> _getReserveRoomIndex(String? role) async {
+    final prefs = await SharedPreferences.getInstance();
+    role = role ?? prefs.getString('userRole') ?? 'ASSISTANT';
+    switch (role.toUpperCase()) {
+      case 'ADMIN':
+        return 4;
+      case 'ENGINEER':
+        return 3;
+      case 'LAB-MANAGER':
+        return 2;
+      case 'ASSISTANT':
+      default:
+        return 4;
+    }
   }
 
   @override
@@ -161,20 +171,15 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
                           _isRoomsExpanded = false;
                           _isLabsExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.user,
-                          title: 'See Users',
+                          title: 'Show Users',
                           isSelected: widget.currentIndex == 0,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const AllUsersScreen(),
-                            0,
-                          ),
+                          onTap: () => _navigateToPage(context, const AllUsersScreen(), 0),
                         ),
                       ],
                     ),
@@ -190,45 +195,46 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
                           _isUsersExpanded = false;
                           _isLabsExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
-                        _buildSubNavItem(
-                          context,
-                          icon: LineIcons.calendar,
-                          title: 'See Calendar',
-                          isSelected: widget.currentIndex == 1,
-                          onTap: () => _navigateToPage(
-                            context,
-                            RoomReservationCalendarScreen(),
-                            1,
-                          ),
-                        ),
-                        _buildSubNavItem(
+_buildSubNavItem(
+  context,
+  icon: LineIcons.calendar,
+  title: 'Show Calendar',
+  isSelected: widget.currentIndex == 1,
+  onTap: () async {
+    widget.onTabChange(1);
+    await _navigateToPage(
+      context,
+      RoomReservationCalendarScreen(currentIndex: 1),
+      1,
+    );
+  },
+),                        _buildSubNavItem(
                           context,
                           icon: LineIcons.book,
                           title: 'Reserve Room',
                           isSelected: widget.currentIndex == 2,
-                          onTap: () => _navigateToPage(
-                            context,
-                            RoomReservationScreen(
-                              onEventCreated: (event) {},
-                              events: [],
-                            ),
-                            2,
-                          ),
+                          onTap: () async {
+                            final index = await _getReserveRoomIndex(null);
+                            await _navigateToPage(
+                              context,
+                              RoomReservationScreen(
+                                currentIndex: index,
+                                onEventCreated: (event) {},
+                                events: [],
+                              ),
+                              index,
+                            );
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.cog,
                           title: 'Manage Rooms',
                           isSelected: widget.currentIndex == 3,
-                          onTap: () => _navigateToPage(
-                            context,
-                            AllRoomsScreen(),
-                            3,
-                          ),
+                          onTap: () => _navigateToPage(context, AllRoomsScreen(), 3),
                         ),
                       ],
                     ),
@@ -244,42 +250,36 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
                           _isUsersExpanded = false;
                           _isRoomsExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
+                          icon: LineIcons.desktop,
+                          title: 'Virtualization Hub',
+                          isSelected: widget.currentIndex == 4,
+                          onTap: () => _navigateToPage(context, const HomeLabScreen(), 4),
+                        ),
+                        _buildSubNavItem(
+                          context,
                           icon: LineIcons.plusCircle,
                           title: 'Request Lab',
-                          isSelected: widget.currentIndex == 4,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const RequestLabScreen(),
-                            4,
-                          ),
+                          isSelected: widget.currentIndex == 5,
+                          onTap: () => _navigateToPage(context, const RequestLabScreen(), 5),
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.list,
                           title: 'Check My Requests',
-                          isSelected: widget.currentIndex == 5,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const RequestsByUserId(),
-                            5,
-                          ),
+                          isSelected: widget.currentIndex == 6,
+                          onTap: () => _navigateToPage(context, const RequestsByUserId(), 6),
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.eye,
-                          title: 'See all requests',
-                          isSelected: widget.currentIndex == 6,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const LabRequestsScreen(),
-                            6,
-                          ),
+                          title: 'Show All Requests',
+                          isSelected: widget.currentIndex == 7,
+                          onTap: () => _navigateToPage(context, const LabRequestsScreen(), 7),
                         ),
                       ],
                     ),
@@ -295,7 +295,6 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
                           _isUsersExpanded = false;
                           _isRoomsExpanded = false;
                           _isLabsExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
@@ -303,59 +302,15 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
                           context,
                           icon: LineIcons.plusCircle,
                           title: 'Leave Request',
-                          isSelected: widget.currentIndex == 7,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const LeaveRequestScreen(),
-                            7,
-                          ),
+                          isSelected: widget.currentIndex == 8,
+                          onTap: () => _navigateToPage(context, const LeaveRequestScreen(), 8),
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.list,
                           title: 'My Leave Requests',
-                          isSelected: widget.currentIndex == 8,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const MyLeaveRequestsScreen(),
-                            8,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildNavItem(
-                      context,
-                      icon: LineIcons.user,
-                      title: 'Profile',
-                      isExpanded: _isProfileExpanded,
-                      onTap: () => setState(() {
-                        _isProfileExpanded = !_isProfileExpanded;
-                        if (_isProfileExpanded) {
-                          _isUsersExpanded = false;
-                          _isRoomsExpanded = false;
-                          _isLabsExpanded = false;
-                          _isLeaveExpanded = false;
-                        }
-                      }),
-                      children: [
-                        _buildSubNavItem(
-                          context,
-                          icon: LineIcons.userCircle,
-                          title: 'See Profile',
                           isSelected: widget.currentIndex == 9,
-                          onTap: () => _navigateToPage(
-                            context,
-                            ProfileScreen(),
-                            9,
-                          ),
-                        ),
-                        _buildSubNavItem(
-                          context,
-                          icon: LineIcons.edit,
-                          title: 'Edit Profile',
-                          isSelected: widget.currentIndex == 10,
-                          onTap: () => _navigateToEditProfile(context, 10),
+                          onTap: () => _navigateToPage(context, const MyLeaveRequestsScreen(), 9),
                         ),
                       ],
                     ),
@@ -380,10 +335,7 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            primaryBlue,
-            darkBlue,
-          ],
+          colors: [primaryBlue, darkBlue],
         ),
       ),
       child: FutureBuilder<Map<String, String?>>(
@@ -391,37 +343,30 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
         builder: (context, snapshot) {
           final userName = snapshot.data?['userName'] ?? 'User';
           final userImage = snapshot.data?['userImage'];
-
           return Column(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.8),
-                    width: 3,
+              GestureDetector(
+                onTap: () => _navigateToPage(context, ProfileScreen(), 0),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.white.withOpacity(0.2),
-                  backgroundImage: userImage != null
-                      ? NetworkImage('${Env.userImageBaseUrl}$userImage')
-                      : null,
-                  child: userImage == null
-                      ? Icon(
-                          Icons.person,
-                          size: 40,
-                          color: Colors.white,
-                        )
-                      : null,
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundColor: Colors.white.withOpacity(0.2),
+                    backgroundImage: userImage != null
+                        ? NetworkImage('${Env.userImageBaseUrl}$userImage')
+                        : null,
+                    child: userImage == null ? Icon(Icons.person, size: 40, color: Colors.white) : null,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -441,10 +386,7 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.3),
-                    width: 1,
-                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
                 ),
                 child: const Text(
                   'Lab Manager Dashboard',
@@ -497,11 +439,7 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    Icon(
-                      icon,
-                      size: 26,
-                      color: isExpanded ? primaryBlue : Colors.black87,
-                    ),
+                    Icon(icon, size: 26, color: isExpanded ? primaryBlue : Colors.black87),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
@@ -516,11 +454,7 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
                     AnimatedRotation(
                       turns: isExpanded ? 0.25 : 0,
                       duration: const Duration(milliseconds: 300),
-                      child: Icon(
-                        Icons.chevron_right,
-                        size: 24,
-                        color: isExpanded ? primaryBlue : Colors.black54,
-                      ),
+                      child: Icon(Icons.chevron_right, size: 24, color: isExpanded ? primaryBlue : Colors.black54),
                     ),
                   ],
                 ),
@@ -550,7 +484,6 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
     required String title,
     required bool isSelected,
     required VoidCallback onTap,
-    int badgeCount = 0,
   }) {
     return Container(
       margin: const EdgeInsets.only(left: 24, right: 16, bottom: 8),
@@ -578,40 +511,7 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
-                Stack(
-                  children: [
-                    Icon(
-                      icon,
-                      size: 22,
-                      color: isSelected ? primaryBlue : Colors.black54,
-                    ),
-                    if (badgeCount > 0)
-                      Positioned(
-                        right: 0,
-                        top: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 16,
-                            minHeight: 16,
-                          ),
-                          child: Text(
-                            badgeCount.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                Icon(icon, size: 22, color: isSelected ? primaryBlue : Colors.black54),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
@@ -646,24 +546,16 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
       padding: const EdgeInsets.all(20),
       child: ElevatedButton.icon(
         onPressed: () => _logout(context),
-        icon: const Icon(
-          LineIcons.alternateSignOut,
-          size: 24,
-        ),
+        icon: const Icon(LineIcons.alternateSignOut, size: 24),
         label: const Text(
           'Log Out',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFEF4444),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 4,
           shadowColor: const Color(0xFFEF4444).withOpacity(0.4),
         ),
@@ -694,11 +586,7 @@ class _LabManagerSidebarState extends State<LabManagerSidebar> with SingleTicker
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Icon(
-                  LineIcons.sun,
-                  size: 26,
-                  color: Colors.black87,
-                ),
+                Icon(LineIcons.sun, size: 26, color: Colors.black87),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Text(

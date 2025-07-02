@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:pte_mobile/models/room.dart'; // Import your Room model
-import 'package:pte_mobile/screens/room/update_room.dart'; // Import the UpdateRoomScreen
-import 'package:flutter_animate/flutter_animate.dart'; // For animations
+import 'package:pte_mobile/models/room.dart';
+import 'package:pte_mobile/screens/room/update_room.dart';
+import 'package:pte_mobile/screens/room/all_rooms.dart'; // Import AllRoomsScreen
+import 'package:flutter_animate/flutter_animate.dart';
 
 class RoomDetailsScreen extends StatelessWidget {
   final Room room;
@@ -13,7 +14,6 @@ class RoomDetailsScreen extends StatelessWidget {
     return Scaffold(
       body: Column(
         children: [
-          // App Bar Section
           Container(
             height: MediaQuery.of(context).size.height * 0.2,
             decoration: BoxDecoration(
@@ -23,50 +23,64 @@ class RoomDetailsScreen extends StatelessWidget {
                 bottomRight: Radius.circular(30),
               ),
             ),
-            child: Center(
-              child: Text(
-                'Room Details',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AllRoomsScreen(),
+                        ),
+                      );
+                    },
+                    tooltip: 'Back to All Rooms',
+                  ),
+                  Text(
+                    'Room Details',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                  SizedBox(width: 48), // Spacer for balance
+                ],
+              ),
             ),
           ),
-
-          // Details Section
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Label Card
                   _buildDetailCard(
                     icon: Icons.meeting_room,
                     label: 'Label',
                     value: room.label,
                   ).animate().fadeIn(duration: 500.ms).slideY(delay: 300.ms),
                   SizedBox(height: 16),
-
-                  // Location Card
                   _buildDetailCard(
                     icon: Icons.location_on,
                     label: 'Location',
                     value: room.location,
                   ).animate().fadeIn(duration: 500.ms).slideY(delay: 400.ms),
                   SizedBox(height: 16),
-
-                  // Capacity Card
                   _buildDetailCard(
                     icon: Icons.people,
                     label: 'Capacity',
                     value: room.capacity,
                   ).animate().fadeIn(duration: 500.ms).slideY(delay: 500.ms),
                   SizedBox(height: 24),
-
-                  // Update Button
                   Container(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -103,7 +117,6 @@ class RoomDetailsScreen extends StatelessWidget {
     );
   }
 
-  // Card Widget for Details
   Widget _buildDetailCard({required IconData icon, required String label, required String value}) {
     return Container(
       decoration: BoxDecoration(

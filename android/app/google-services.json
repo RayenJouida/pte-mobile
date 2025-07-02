@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "467020940042",
+    "project_id": "ptejouida",
+    "storage_bucket": "ptejouida.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:467020940042:android:ab6ff83da7e3a42d6130f3",
+        "android_client_info": {
+          "package_name": "com.example.pte_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBKZKrKMpiAWAE-Uf9kM1MRvD8gYnHoMqU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

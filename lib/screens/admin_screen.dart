@@ -130,7 +130,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   onChanged: (value) => lname = value,
                 ),
                 TextField(
-                  decoration: InputDecoration(labelText: 'Department'),
+                  decoration: InputDecoration(labelText: 'departement'),
                   onChanged: (value) => departement = value,
                 ),
                 SizedBox(height: 20),

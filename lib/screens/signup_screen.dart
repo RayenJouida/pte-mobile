@@ -24,9 +24,12 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController fsController = TextEditingController();
   final TextEditingController bioController = TextEditingController();
   final TextEditingController addressController = TextEditingController();
-  final TextEditingController departmentController = TextEditingController();
+  final TextEditingController departementController = TextEditingController();
+  final TextEditingController hiringDateController = TextEditingController();
+  final TextEditingController genderController = TextEditingController();
   bool _isTeamLeader = false;
   bool _isPasswordVisible = false;
+  bool _hasDrivingLicense = false;
   double _experienceYears = 0;
   bool _isLoading = false;
 
@@ -69,9 +72,12 @@ class _SignupScreenState extends State<SignupScreen> {
         fs: fsController.text,
         bio: bioController.text,
         address: addressController.text,
-        department: departmentController.text,
+        departement: departementController.text,
         teamLeader: _isTeamLeader,
         imagePath: _imageFile?.path,
+        drivingLicense: _hasDrivingLicense,
+        gender: genderController.text,
+        hiringDate: hiringDateController.text.isNotEmpty ? hiringDateController.text : null,
       );
 
       if (success) {
@@ -262,7 +268,7 @@ class _SignupScreenState extends State<SignupScreen> {
       ),
     );
 
-    // Redirect to login screen after 2.5 seconds (reduced from 3)
+    // Redirect to login screen after 2.5 seconds
     Future.delayed(Duration(milliseconds: 2500), () {
       Navigator.pop(context);
       Navigator.pushReplacementNamed(context, '/login');
@@ -340,6 +346,32 @@ class _SignupScreenState extends State<SignupScreen> {
             },
           ),
           _buildMatriculeField(),
+          _buildDropdownField(
+            genderController,
+            "Gender",
+            Icons.wc,
+            ['Male', 'Female'],
+            hint: 'Select Gender',
+          ),
+          _buildDropdownField(
+            fsController,
+            "Family Situation",
+            Icons.family_restroom,
+            ['Single', 'Married', 'Divorced'],
+            hint: 'Select Family Situation',
+          ),
+          _buildDropdownField(
+            nationalityController,
+            "Nationality",
+            Icons.flag,
+            ['Tunisian', 'Algerian', 'Morrocan', 'Algerian','Lybian', 'French','Other'],
+            hint: 'Select Nationality',
+          ),
+          _buildDateField(
+            hiringDateController,
+            "Hiring Date",
+            Icons.date_range,
+          ),
         ]),
         isActive: _currentStep >= 0,
         state: _currentStep > 0 ? StepState.complete : StepState.indexed,
@@ -347,12 +379,19 @@ class _SignupScreenState extends State<SignupScreen> {
       Step(
         title: Icon(Icons.description, color: Color(0xFF0632A1)),
         content: Column(children: [
-          _buildTextField(emailController, "Email", Icons.email, 
+          _buildTextField(emailController, "Email", Icons.email,
             placeholder: "name@gmail.com",
             isEmail: true),
-          _buildTextField(passwordController, "Password", Icons.lock, 
+          _buildTextField(passwordController, "Password", Icons.lock,
             placeholder: "Min. 8 characters with letters & numbers",
             isPassword: true),
+          _buildTextField(phoneController, "Phone Number", Icons.phone,
+            placeholder: "8 digits only",
+            validator: (value) {
+              if (value == null || value.isEmpty) return 'Please enter phone number';
+              if (!RegExp(r'^\d{8}$').hasMatch(value)) return 'Phone must be 8 digits';
+              return null;
+            }),
           // Refined Experience Slider
           Padding(
             padding: EdgeInsets.symmetric(vertical: 10.0),
@@ -365,8 +404,8 @@ class _SignupScreenState extends State<SignupScreen> {
                     Text(
                       "Experience",
                       style: TextStyle(
-                        color: Colors.grey.shade700, 
-                        fontSize: 14, 
+                        color: Colors.grey.shade700,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500
                       ),
                     ),
@@ -379,8 +418,8 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: Text(
                         "${_experienceYears.toStringAsFixed(1)} years",
                         style: TextStyle(
-                          color: Colors.white, 
-                          fontSize: 12, 
+                          color: Colors.white,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold
                         ),
                       ),
@@ -399,7 +438,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     value: _experienceYears,
                     min: 0,
                     max: 15,
-                    divisions: 30, // More granular divisions
+                    divisions: 30,
                     activeColor: Color(0xFF0632A1),
                     inactiveColor: Color(0xFF0632A1).withOpacity(0.2),
                     onChanged: (value) {
@@ -419,7 +458,47 @@ class _SignupScreenState extends State<SignupScreen> {
       Step(
         title: Icon(Icons.account_circle, color: Color(0xFF0632A1)),
         content: Column(children: [
-          // Refined Team Leader Switch
+          _buildDropdownField(
+            departementController,
+            "departement",
+            Icons.work,
+            ['Administration', 'System', 'Networking', 'Cyber Security', 'Development'],
+            hint: 'Select departement',
+          ),
+          Container(
+            margin: EdgeInsets.only(bottom: 16),
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.drive_eta, color: Color(0xFF0632A1), size: 20),
+                    SizedBox(width: 12),
+                    Text(
+                      "Driving License",
+                      style: TextStyle(
+                        color: Colors.grey.shade800,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                Switch(
+                  value: _hasDrivingLicense,
+                  onChanged: (bool value) => setState(() => _hasDrivingLicense = value),
+                  activeColor: Color(0xFF0632A1),
+                  activeTrackColor: Color(0xFF0632A1).withOpacity(0.4),
+                ),
+              ],
+            ),
+          ),
           Container(
             margin: EdgeInsets.only(bottom: 16),
             padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -523,6 +602,7 @@ class _SignupScreenState extends State<SignupScreen> {
     bool isEmail = false,
     String placeholder = "",
     Function(String)? onChanged,
+    String? Function(String?)? validator,
     bool enabled = true,
   }) {
     return Padding(
@@ -567,20 +647,115 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
         ),
-        validator: (value) {
-          if (value == null || value.isEmpty) {
-            return 'Please enter $label';
-          }
-          if (isEmail && !RegExp(r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+").hasMatch(value)) {
-            return 'Enter a valid email (e.g., name@gmail.com)';
-          }
-          if (isPassword && (value.length < 8 || !RegExp(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$").hasMatch(value))) {
-            return 'Password must be at least 8 characters with letters and numbers';
-          }
-          return null;
-        },
+        validator: validator ??
+            (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter $label';
+              }
+              if (isEmail && !RegExp(r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+").hasMatch(value)) {
+                return 'Enter a valid email (e.g., name@gmail.com)';
+              }
+              if (isPassword && (value.length < 8 || !RegExp(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$").hasMatch(value))) {
+                return 'Password must be at least 8 characters with letters and numbers';
+              }
+              return null;
+            },
         onChanged: onChanged,
         enabled: enabled,
+      ),
+    );
+  }
+
+  Widget _buildDropdownField(
+    TextEditingController controller,
+    String label,
+    IconData icon,
+    List<String> items,
+    {String? hint}
+  ) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 10.0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
+        ),
+        child: DropdownButtonFormField<String>(
+          value: controller.text.isNotEmpty ? controller.text : null,
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+            labelStyle: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+            prefixIcon: Icon(icon, color: Color(0xFF0632A1), size: 18),
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          ),
+          items: items.map((String item) {
+            return DropdownMenuItem<String>(
+              value: item,
+              child: Text(item, style: TextStyle(color: Colors.black87)),
+            );
+          }).toList(),
+          onChanged: (value) {
+            setState(() {
+              controller.text = value ?? '';
+            });
+          },
+          validator: (value) => value == null || value.isEmpty ? 'Please select $label' : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateField(
+    TextEditingController controller,
+    String label,
+    IconData icon,
+  ) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 10.0),
+      child: TextFormField(
+        controller: controller,
+        style: TextStyle(color: Colors.black87, fontSize: 14),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: 'Select Date',
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+          labelStyle: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+          prefixIcon: Icon(icon, color: Color(0xFF0632A1), size: 18),
+          filled: true,
+          fillColor: Colors.grey.shade50,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Color(0xFF0632A1).withOpacity(0.3), width: 1),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Color(0xFF0632A1), width: 1.5),
+          ),
+          contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        ),
+        onTap: () async {
+          DateTime? pickedDate = await showDatePicker(
+            context: context,
+            initialDate: DateTime.now(),
+            firstDate: DateTime(1900),
+            lastDate: DateTime.now(),
+          );
+          if (pickedDate != null) {
+            setState(() {
+              controller.text = pickedDate.toIso8601String().split('T')[0];
+            });
+          }
+        },
+        validator: (value) => value == null || value.isEmpty ? 'Please select $label' : null,
+        readOnly: true,
       ),
     );
   }
@@ -590,13 +765,18 @@ class _SignupScreenState extends State<SignupScreen> {
       case 0:
         return matriculeController.text.isNotEmpty &&
             firstNameController.text.isNotEmpty &&
-            lastNameController.text.isNotEmpty;
+            lastNameController.text.isNotEmpty &&
+            genderController.text.isNotEmpty &&
+            fsController.text.isNotEmpty &&
+            nationalityController.text.isNotEmpty &&
+            hiringDateController.text.isNotEmpty;
       case 1:
         return emailController.text.isNotEmpty &&
             passwordController.text.isNotEmpty &&
+            phoneController.text.isNotEmpty &&
             _formKey.currentState!.validate();
       case 2:
-        return true; // No validation for the image step
+        return departementController.text.isNotEmpty;
       default:
         return false;
     }
@@ -654,8 +834,8 @@ class _SignupScreenState extends State<SignupScreen> {
                               height: 4,
                               margin: EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
-                                color: _currentStep >= index 
-                                    ? Color(0xFF0632A1) 
+                                color: _currentStep >= index
+                                    ? Color(0xFF0632A1)
                                     : Color(0xFF0632A1).withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(2),
                               ),
@@ -663,15 +843,15 @@ class _SignupScreenState extends State<SignupScreen> {
                           }),
                         ),
                       ),
-                      
+
                       // Step Title
                       Container(
                         margin: EdgeInsets.only(bottom: 16),
                         child: Text(
-                          _currentStep == 0 
-                              ? "Personal Information" 
-                              : _currentStep == 1 
-                                  ? "Account Details" 
+                          _currentStep == 0
+                              ? "Personal Information"
+                              : _currentStep == 1
+                                  ? "Account Details"
                                   : "Profile Setup",
                           style: TextStyle(
                             color: Color(0xFF0632A1),
@@ -680,11 +860,11 @@ class _SignupScreenState extends State<SignupScreen> {
                           ),
                         ),
                       ),
-                      
+
                       // Step Content
                       _buildSteps()[_currentStep].content,
                       SizedBox(height: 24),
-                      
+
                       // Navigation Buttons
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -709,7 +889,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                   ),
                                 )
                               : SizedBox(width: 100), // Empty space if on first step
-                          
+
                           // Next/Submit Button
                           ElevatedButton.icon(
                             onPressed: _isStepValid(_currentStep) && !_isLoading
@@ -757,8 +937,8 @@ class _SignupScreenState extends State<SignupScreen> {
                             ),
                           ),
                         ],
-                      ),
-                      
+                     ),
+
                       // Login Link
                       Padding(
                         padding: EdgeInsets.only(top: 30, bottom: 20),
@@ -811,7 +991,9 @@ class _SignupScreenState extends State<SignupScreen> {
     fsController.dispose();
     bioController.dispose();
     addressController.dispose();
-    departmentController.dispose();
+    departementController.dispose();
+    hiringDateController.dispose();
+    genderController.dispose();
     super.dispose();
   }
 }

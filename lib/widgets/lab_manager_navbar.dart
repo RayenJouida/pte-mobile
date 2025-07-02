@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 import 'package:line_icons/line_icons.dart';
 import 'package:pte_mobile/screens/feed/feed_screen.dart';
-import 'package:pte_mobile/screens/labmanager/home_lab_screen.dart';
-import 'package:pte_mobile/screens/labmanager/lab_request.dart';
 import 'package:pte_mobile/screens/messaging/home_messages_screen.dart';
-import 'package:pte_mobile/screens/settings_screen.dart';
+import 'package:pte_mobile/screens/profile_screen.dart';
+import 'package:pte_mobile/screens/notifications_screen.dart';
 
 class LabManagerNavbar extends StatelessWidget {
   final int currentIndex;
@@ -24,27 +23,24 @@ class LabManagerNavbar extends StatelessWidget {
   void _navigateToPage(BuildContext context, int index) {
     switch (index) {
       case 0:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const FeedScreen()),
-        );
+        Navigator.pushReplacementNamed(context, '/feed');
         break;
       case 1:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HomeLabScreen()),
+          MaterialPageRoute(builder: (context) => HomeMessagesScreen()),
         );
         break;
       case 2:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HomeMessagesScreen()),
+          MaterialPageRoute(builder: (context) => ProfileScreen()),
         );
         break;
       case 3:
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+          MaterialPageRoute(builder: (context) => NotificationsScreen()),
         );
         break;
     }
@@ -88,57 +84,27 @@ class LabManagerNavbar extends StatelessWidget {
           tabs: [
             GButton(
               icon: LineIcons.home,
-              text: 'Home',
+              text: 'Feed',
               leading: Stack(
                 children: [
-                  const Icon(LineIcons.home, size: 25, semanticLabel: 'Home'),
-                  if (unreadNotificationCount > 0)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: colorScheme.error,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
-                        child: Text(
-                          unreadNotificationCount.toString(),
-                          style: TextStyle(
-                            color: colorScheme.onError,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
+                  const Icon(LineIcons.home, size: 25),
                 ],
               ),
-            ),
-            const GButton(
-              icon: LineIcons.desktop,
-              text: 'Virt Lab',
-              leading: Icon(LineIcons.desktop, size: 25, semanticLabel: 'Virtual Lab'),
             ),
             GButton(
               icon: LineIcons.comment,
               text: 'Chat',
               leading: Stack(
                 children: [
-                  const Icon(LineIcons.comment, size: 25, semanticLabel: 'Chat'),
+                  const Icon(LineIcons.comment, size: 25),
                   if (unreadMessageCount > 0)
                     Positioned(
                       right: 0,
                       top: 0,
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: colorScheme.error,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
                           shape: BoxShape.circle,
                         ),
                         constraints: const BoxConstraints(
@@ -147,8 +113,8 @@ class LabManagerNavbar extends StatelessWidget {
                         ),
                         child: Text(
                           unreadMessageCount.toString(),
-                          style: TextStyle(
-                            color: colorScheme.onError,
+                          style: const TextStyle(
+                            color: Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
@@ -160,9 +126,42 @@ class LabManagerNavbar extends StatelessWidget {
               ),
             ),
             const GButton(
-              icon: LineIcons.cog,
-              text: 'Settings',
-              leading: Icon(LineIcons.cog, size: 25, semanticLabel: 'Settings'),
+              icon: LineIcons.user,
+              text: 'Profile',
+            ),
+            GButton(
+              icon: LineIcons.bell,
+              text: 'Notifications',
+              leading: Stack(
+                children: [
+                  const Icon(LineIcons.bell, size: 25),
+                  if (unreadNotificationCount > 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          unreadNotificationCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ],
           selectedIndex: currentIndex,

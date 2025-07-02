@@ -210,7 +210,7 @@ class PostService {
         throw Exception('No token found. Please log in first.');
       }
 
-      final uri = Uri.parse('$baseUrl/post/getPendingPosts/$userId');
+      final uri = Uri.parse('$baseUrl/post/getMyPendingPosts/$userId');
       final response = await http.get(
         uri,
         headers: {'Authorization': 'Bearer $token'},
@@ -539,7 +539,7 @@ class PostService {
         throw Exception('No token found. Please log in first.');
       }
 
-      final uri = Uri.parse('$baseUrl/post/getAllPostsWithStats');
+      final uri = Uri.parse('$baseUrl/post/getAllStats');
       final response = await http.get(
         uri,
         headers: {'Authorization': 'Bearer $token'},

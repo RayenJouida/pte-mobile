@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:intl/intl.dart';
+import 'package:hive/hive.dart';
+import 'package:pte_mobile/models/chat_message.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -12,13 +14,19 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _userInput = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
   static const apiKey = "AIzaSyCsCWG8OynTUg2p_GZHrrJ1Pp5YV8S1G2o";
   final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: apiKey);
-  final List<Message> _messages = [];
+
+  late Box<ChatMessage> _messageBox;
+  List<ChatMessage> _messages = [];
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _messageBox = Hive.box<ChatMessage>('chat_history');
+    _messages = _messageBox.values.toList();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
@@ -33,34 +41,53 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> sendMessage() async {
-    final message = _userInput.text;
-    if (message.isEmpty) return;
+    final messageText = _userInput.text;
+    if (messageText.isEmpty) return;
+
+    final userMessage = ChatMessage(
+      isUser: true,
+      message: messageText,
+      date: DateTime.now(),
+    );
 
     setState(() {
-      _messages.add(Message(isUser: true, message: message, date: DateTime.now()));
+      _messages.add(userMessage);
+      _isLoading = true;
     });
+    _messageBox.add(userMessage);
+    _userInput.clear();
+    _scrollToBottom();
 
     try {
-      final response = await model.generateContent([Content.text(message)]);
+      final response = await model.generateContent([Content.text(messageText)]);
+      final botMessage = ChatMessage(
+        isUser: false,
+        message: response.text ?? "No response",
+        date: DateTime.now(),
+      );
       setState(() {
-        _messages.add(Message(
-          isUser: false,
-          message: response.text ?? "No response",
-          date: DateTime.now(),
-        ));
+        _messages.add(botMessage);
       });
+      _messageBox.add(botMessage);
     } catch (e) {
+      final errorMessage = ChatMessage(
+        isUser: false,
+        message: "Error: ${e.toString()}",
+        date: DateTime.now(),
+      );
       setState(() {
-        _messages.add(Message(
-          isUser: false,
-          message: "Error: ${e.toString()}",
-          date: DateTime.now(),
-        ));
+        _messages.add(errorMessage);
       });
+      _messageBox.add(errorMessage);
     } finally {
-      _userInput.clear();
+      setState(() => _isLoading = false);
       _scrollToBottom();
     }
+  }
+
+  void _clearChat() {
+    _messageBox.clear();
+    setState(() => _messages.clear());
   }
 
   @override
@@ -72,6 +99,13 @@ class _ChatScreenState extends State<ChatScreen> {
         title: const Text("Chat with Gemini"),
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _clearChat,
+            tooltip: "Clear Chat",
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -92,12 +126,13 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           Container(
             padding: const EdgeInsets.all(8.0),
-            color: colorScheme.background, // Adds color contrast
+            color: colorScheme.background,
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _userInput,
+                    enabled: !_isLoading,
                     decoration: InputDecoration(
                       hintText: "Type a message...",
                       border: OutlineInputBorder(
@@ -114,9 +149,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 8),
                 FloatingActionButton(
-                  onPressed: sendMessage,
-                  child: Icon(Icons.send, color: colorScheme.onPrimary),
+                  onPressed: _isLoading ? null : sendMessage,
                   backgroundColor: colorScheme.primary,
+                  child: _isLoading
+                      ? Padding(
+                          padding: const EdgeInsets.all(10.0),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: colorScheme.onPrimary,
+                          ),
+                        )
+                      : Icon(Icons.send, color: colorScheme.onPrimary),
                 ),
               ],
             ),
@@ -125,14 +168,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
-}
-
-class Message {
-  final bool isUser;
-  final String message;
-  final DateTime date;
-
-  Message({required this.isUser, required this.message, required this.date});
 }
 
 class ChatBubble extends StatelessWidget {

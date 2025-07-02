@@ -1,13 +1,22 @@
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:pte_mobile/models/vehicle.dart';
 import 'package:pte_mobile/screens/vehicules/create_vehicle.dart';
 import 'package:pte_mobile/screens/vehicules/update_vehicle.dart';
 import 'package:pte_mobile/screens/vehicules/vehicle_details.dart';
 import 'package:pte_mobile/services/vehicle_service.dart';
+import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:pte_mobile/widgets/assistant_sidebar.dart';
+import 'package:pte_mobile/widgets/engineer_sidebar.dart';
+import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AllVehiclesScreen extends StatefulWidget {
+  final int? currentIndex;
+
+  const AllVehiclesScreen({Key? key, this.currentIndex}) : super(key: key);
+
   @override
   _AllVehiclesScreenState createState() => _AllVehiclesScreenState();
 }
@@ -19,14 +28,28 @@ class _AllVehiclesScreenState extends State<AllVehiclesScreen> {
   bool _isLoading = true;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  String? _currentUserRole;
+  int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.currentIndex ?? 0;
+    _fetchCurrentUserRole();
     _fetchVehicles();
   }
 
+  Future<void> _fetchCurrentUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserRole = prefs.getString('userRole') ?? 'Unknown Role';
+    });
+  }
+
   Future<void> _fetchVehicles() async {
+    setState(() {
+      _isLoading = true;
+    });
     try {
       final vehicles = await _vehicleService.getVehicles();
       setState(() {
@@ -84,44 +107,143 @@ class _AllVehiclesScreenState extends State<AllVehiclesScreen> {
     });
   }
 
+  void _handleTabChange(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+    _fetchVehicles();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFF5F5F5), // Light gray background
-      appBar: AppBar(
-        title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search by Model, Registration, or Type...',
-                  hintStyle: TextStyle(color: Colors.white70),
-                  border: InputBorder.none,
-                ),
-                style: TextStyle(color: Colors.white),
-                onChanged: _performSearch,
-              )
-            : Text(
-                'All Vehicles',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      drawer: _currentUserRole == 'ADMIN'
+          ? AdminSidebar(currentIndex: _currentIndex, onTabChange: _handleTabChange)
+          : _currentUserRole == 'LAB-MANAGER'
+              ? LabManagerSidebar(currentIndex: _currentIndex, onTabChange: _handleTabChange)
+              : _currentUserRole == 'ENGINEER'
+                  ? EngineerSidebar(currentIndex: _currentIndex, onTabChange: _handleTabChange)
+                  : AssistantSidebar(currentIndex: _currentIndex, onTabChange: _handleTabChange),
+      body: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 16,
+              bottom: 24,
+              left: 16,
+              right: 16,
+            ),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0632A1),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
               ),
-        centerTitle: true,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF0632A1), Color(0xFF3D5AFE)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Builder(
+                      builder: (context) => IconButton(
+                        icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+                        onPressed: () => Scaffold.of(context).openDrawer(),
+                      ),
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          'All Vehicles',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.search, color: Colors.white),
+                      onPressed: () {
+                        showSearch(context: context, delegate: VehicleSearchDelegate(_vehicles));
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      onPressed: _fetchVehicles,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.white),
-            onPressed: _toggleSearch,
-          ),
-          IconButton(
-            icon: Icon(Icons.refresh, color: Colors.white),
-            onPressed: _fetchVehicles,
+          Expanded(
+            child: _isLoading
+                ? _buildShimmerLoading()
+                : _filteredVehicles.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.directions_car, size: 60, color: Colors.grey),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No vehicles available',
+                              style: const TextStyle(fontSize: 18, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _fetchVehicles,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _filteredVehicles.length,
+                          itemBuilder: (context, index) {
+                            final vehicle = _filteredVehicles[index];
+                            return Dismissible(
+                              key: Key(vehicle.id ?? index.toString()),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 20),
+                                child: const Icon(Icons.delete, color: Colors.white),
+                              ),
+                              confirmDismiss: (direction) async {
+                                return await showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Delete Vehicle'),
+                                    content: Text('Are you sure you want to delete "${vehicle.model}"?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(true),
+                                        child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              onDismissed: (direction) {
+                                if (vehicle.id != null) _deleteVehicle(vehicle.id!);
+                              },
+                              child: _buildVehicleCard(vehicle)
+                                  .animate()
+                                  .fadeIn(duration: 300.ms, delay: (50 * index).ms)
+                                  .slideY(begin: 0.1, delay: (50 * index).ms),
+                            );
+                          },
+                        ),
+                      ),
           ),
         ],
       ),
@@ -129,155 +251,171 @@ class _AllVehiclesScreenState extends State<AllVehiclesScreen> {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (context) => CreateVehicleScreen(),
-            ),
+            MaterialPageRoute(builder: (context) =>  CreateVehicleScreen()),
           ).then((_) => _fetchVehicles());
         },
-        backgroundColor: Color(0xFF0632A1),
-        child: Icon(Icons.add, color: Colors.white),
+        backgroundColor: const Color(0xFF0632A1),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
-      body: _isLoading
-          ? _buildShimmerLoading()
-          : _filteredVehicles.isEmpty
-              ? Center(child: Text('No vehicles found', style: TextStyle(color: Colors.grey)))
-              : ListView.builder(
-                  padding: EdgeInsets.all(16),
-                  itemCount: _filteredVehicles.length,
-                  itemBuilder: (context, index) {
-                    final vehicle = _filteredVehicles[index];
-                    return Dismissible(
-                      key: Key(vehicle.id!), // Unique key for each item
-                      direction: DismissDirection.endToStart, // Swipe from right to left
-                      background: Container(
-                        margin: EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(20), // Match card border radius
+    );
+  }
+
+  Widget _buildVehicleCard(Vehicle vehicle) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => VehicleDetailsScreen(vehicle: vehicle),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    vehicle.model ?? 'N/A',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit, color: Colors.blue),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => UpdateVehicleScreen(vehicle: vehicle),
                         ),
-                        alignment: Alignment.centerRight,
-                        padding: EdgeInsets.only(right: 20),
-                        child: Icon(Icons.delete, color: Colors.white, size: 30),
-                      ),
-                      confirmDismiss: (direction) async {
-                        // Show a confirmation dialog with the vehicle's name
-                        return await showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text('Delete Vehicle'),
-                            content: Text('Are you sure you want to delete "${vehicle.model}"?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(false),
-                                child: Text('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(true),
-                                child: Text('Delete', style: TextStyle(color: Colors.red)),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      onDismissed: (direction) {
-                        _deleteVehicle(vehicle.id!); // Delete the vehicle
-                      },
-                      child: GestureDetector(
-                        onDoubleTap: () {
-                          // Navigate to VehicleDetailsScreen on double tap
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => VehicleDetailsScreen(vehicle: vehicle),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          height: 150, // Uniform height for all cards
-                          margin: EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.3), // Translucent background
-                            borderRadius: BorderRadius.circular(20), // Rounded corners
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                              width: 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 10,
-                                offset: Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), // Blur effect
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    // Model with icon
-                                    Row(
-                                      children: [
-                                        Icon(Icons.directions_car, color: Color(0xFF0632A1), size: 20),
-                                        SizedBox(width: 8),
-                                        Text(
-                                          vehicle.model ?? 'N/A',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF0632A1),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    // Registration Number
-                                    Text(
-                                      'Registration: ${vehicle.registrationNumber ?? 'N/A'}',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold, // Bold label
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                    // Type
-                                    Text(
-                                      'Type: ${vehicle.type ?? 'N/A'}',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold, // Bold label
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                      ).then((_) => _fetchVehicles());
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.confirmation_number, size: 16, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Text(
+                    vehicle.registrationNumber ?? 'N/A',
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.category, size: 16, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Text(
+                    vehicle.type ?? 'N/A',
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildShimmerLoading() {
     return ListView.builder(
-      padding: EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       itemCount: 5,
       itemBuilder: (context, index) {
         return Container(
-          height: 150,
-          margin: EdgeInsets.only(bottom: 16),
+          height: 120,
+          margin: const EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
             color: Colors.grey[300],
+            borderRadius: BorderRadius.circular(12),
           ),
+        ).animate().shimmer(duration: 1000.ms);
+      },
+    );
+  }
+}
+
+class VehicleSearchDelegate extends SearchDelegate {
+  final List<Vehicle> vehicles;
+
+  VehicleSearchDelegate(this.vehicles);
+
+  @override
+  List<Widget> buildActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.clear),
+        onPressed: () {
+          query = '';
+        },
+      ),
+    ];
+  }
+
+  @override
+  Widget buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () {
+        close(context, null);
+      },
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    final results = vehicles.where((vehicle) {
+      final model = vehicle.model?.toLowerCase() ?? '';
+      final registration = vehicle.registrationNumber?.toLowerCase() ?? '';
+      final type = vehicle.type?.toLowerCase() ?? '';
+      return model.contains(query.toLowerCase()) ||
+          registration.contains(query.toLowerCase()) ||
+          type.contains(query.toLowerCase());
+    }).toList();
+    return _buildSearchResults(results);
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return buildResults(context);
+  }
+
+  Widget _buildSearchResults(List<Vehicle> results) {
+    return ListView.builder(
+      itemCount: results.length,
+      itemBuilder: (context, index) {
+        final vehicle = results[index];
+        return ListTile(
+          title: Text(vehicle.model ?? 'N/A'),
+          subtitle: Text(vehicle.registrationNumber ?? 'N/A'),
+          onTap: () {
+            close(context, vehicle);
+          },
         );
       },
     );

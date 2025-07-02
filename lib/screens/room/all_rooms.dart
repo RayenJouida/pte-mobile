@@ -5,8 +5,17 @@ import 'package:pte_mobile/screens/room/create_room.dart';
 import 'package:pte_mobile/screens/room/update_room.dart';
 import 'package:pte_mobile/screens/room/room_details.dart';
 import 'package:pte_mobile/services/room_service.dart';
+import 'package:pte_mobile/widgets/engineer_sidebar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pte_mobile/widgets/assistant_sidebar.dart';
+import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
 
 class AllRoomsScreen extends StatefulWidget {
+  final int? currentIndex; // Added as an optional parameter
+
+  const AllRoomsScreen({Key? key, this.currentIndex}) : super(key: key);
+
   @override
   _AllRoomsScreenState createState() => _AllRoomsScreenState();
 }
@@ -17,11 +26,22 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
   bool _isLoading = true;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  String? _currentUserRole;
+  int _currentIndex = 0; // Initialize with default or passed value
 
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.currentIndex ?? 0; // Use passed index or default to 0
+    _fetchCurrentUserRole();
     _fetchRooms();
+  }
+
+  Future<void> _fetchCurrentUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserRole = prefs.getString('userRole') ?? 'Unknown Role';
+    });
   }
 
   Future<void> _fetchRooms() async {
@@ -75,14 +95,53 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
     }).toList();
   }
 
+  void _handleTabChange(int index) {
+    setState(() {
+      _currentIndex = index; // Sync with navigation
+    });
+    _fetchRooms(); // Refresh data on navigation
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: _currentUserRole == 'ADMIN'
+          ? AdminSidebar(
+              currentIndex: _currentIndex,
+              onTabChange: (index) {
+                _handleTabChange(index); // Sync with sidebar navigation
+              },
+            )
+          : _currentUserRole == 'LAB-MANAGER'
+              ? LabManagerSidebar(
+                  currentIndex: _currentIndex,
+                  onTabChange: (index) {
+                    _handleTabChange(index); // Sync with sidebar navigation
+                  },
+                )
+              : _currentUserRole == 'ENGINEER'
+                  ? EngineerSidebar(
+                      currentIndex: _currentIndex,
+                      onTabChange: (index) {
+                        _handleTabChange(index); // Sync with sidebar navigation
+                      },
+                    )
+                  : AssistantSidebar(
+                      currentIndex: _currentIndex,
+                      onTabChange: (index) {
+                        _handleTabChange(index); // Sync with sidebar navigation
+                      },
+                    ),
       body: Column(
         children: [
           // Upper Section (Primary Color)
           Container(
-            height: MediaQuery.of(context).size.height * 0.2,
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 16,
+              bottom: 24,
+              left: 16,
+              right: 16,
+            ),
             decoration: BoxDecoration(
               color: Color(0xFF0632A1),
               borderRadius: BorderRadius.only(
@@ -90,46 +149,42 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
                 bottomRight: Radius.circular(30),
               ),
             ),
-            child: Stack(
+            child: Column(
               children: [
-                Center(
-                  child: Text(
-                    'All Rooms',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                Row(
+                  children: [
+                    Builder(
+                      builder: (context) => IconButton(
+                        icon: Icon(Icons.menu, color: Colors.white, size: 28),
+                        onPressed: () => Scaffold.of(context).openDrawer(),
+                      ),
                     ),
-                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
-                ),
-                Positioned(
-                  left: 16,
-                  top: MediaQuery.of(context).padding.top + 16,
-                  child: IconButton(
-                    icon: Icon(Icons.chevron_left, color: Colors.white, size: 32),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-                Positioned(
-                  right: 16,
-                  top: MediaQuery.of(context).padding.top + 16,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.search, color: Colors.white),
-                        onPressed: () {
-                          showSearch(
-                            context: context,
-                            delegate: RoomSearchDelegate(_rooms),
-                          );
-                        },
+                    Expanded(
+                      child: Center(
+                        child: Text(
+                          'All Rooms',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
-                      IconButton(
-                        icon: Icon(Icons.refresh, color: Colors.white),
-                        onPressed: _fetchRooms,
-                      ),
-                    ],
-                  ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.search, color: Colors.white),
+                      onPressed: () {
+                        showSearch(
+                          context: context,
+                          delegate: RoomSearchDelegate(_rooms),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.refresh, color: Colors.white),
+                      onPressed: _fetchRooms,
+                    ),
+                  ],
                 ),
               ],
             ),

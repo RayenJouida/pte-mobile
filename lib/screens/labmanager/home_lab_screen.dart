@@ -4,9 +4,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pte_mobile/screens/labmanager/lab_request.dart';
 import 'package:pte_mobile/screens/labmanager/request_lab.dart';
 import 'package:pte_mobile/services/virtualization_env_service.dart';
+import 'package:pte_mobile/services/auth_service.dart';
 import 'package:pte_mobile/theme/theme.dart';
 import 'package:pte_mobile/widgets/lab_manager_navbar.dart';
 import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'dart:math' as math;
 
 class HomeLabScreen extends StatefulWidget {
   const HomeLabScreen({Key? key}) : super(key: key);
@@ -16,14 +19,20 @@ class HomeLabScreen extends StatefulWidget {
 }
 
 class _HomeLabScreenState extends State<HomeLabScreen> {
-  int _currentIndex = 1; // Default to Virt Lab section for this screen (index 1 in LabManagerNavbar)
+  int _currentIndex = 1;
   final VirtualizationEnvService _envService = VirtualizationEnvService();
+  final AuthService _authService = AuthService();
 
   // Stats variables
   int _totalLabs = 0;
   int _activeLabs = 0;
   int _pendingRequests = 0;
+  int _expiredLabs = 0;
+  int _upcomingExpirations = 0;
   double _activeLabsPercentage = 0.0;
+  double _avgLabDuration = 0.0;
+  Map<String, int> _requestsByUser = {};
+  Map<String, String> _userNames = {};
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -43,18 +52,66 @@ class _HomeLabScreenState extends State<HomeLabScreen> {
       // Fetch all virtualization environments
       final allEnvs = await _envService.getAllVirtualizationEnvs();
       final activeLabs = await _envService.getActiveLabs();
+      final now = DateTime.now();
+      final oneWeekFromNow = now.add(const Duration(days: 7));
 
       // Calculate stats
       final totalLabs = allEnvs.length;
       final activeLabsCount = activeLabs.length;
-      final pendingRequests = allEnvs.where((env) => env.status == 'Pending').length;
+      final pendingRequests = allEnvs.where((env) => env.status == 'Pending' && !env.isAccepted).length;
+      final expiredLabs = allEnvs.where((env) => env.end.isBefore(now) && env.status != 'Expired').length;
+      final upcomingExpirations = allEnvs.where((env) =>
+          env.status == 'Active' &&
+          env.isAccepted &&
+          env.end.isAfter(now) &&
+          env.end.isBefore(oneWeekFromNow)).length;
+
+      // Calculate average lab duration for active labs
+      final activeDurations = activeLabs
+          .map((env) => env.end.difference(env.start).inDays)
+          .where((duration) => duration > 0);
+      final avgLabDuration = activeDurations.isNotEmpty
+          ? activeDurations.reduce((a, b) => a + b) / activeDurations.length
+          : 0.0;
+
+      // Calculate requests by user
+      final requestsByUser = <String, int>{};
+      for (var env in allEnvs) {
+        final userId = env.applicantId;
+        if (userId.isNotEmpty) {
+          requestsByUser[userId] = (requestsByUser[userId] ?? 0) + 1;
+        }
+      }
+
+      // Fetch user names for the top 5 users by request count
+      final userNames = <String, String>{};
+      final topUsers = requestsByUser.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      for (var entry in topUsers.take(5)) {
+        try {
+          final user = await _authService.fetchUser(entry.key);
+          if (user != null) {
+            userNames[entry.key] = '${user.firstName} ${user.lastName}';
+          } else {
+            userNames[entry.key] = 'User ${entry.key.substring(0, 6)}';
+          }
+        } catch (e) {
+          userNames[entry.key] = 'User ${entry.key.substring(0, 6)}';
+        }
+      }
+
       final activeLabsPercentage = totalLabs > 0 ? (activeLabsCount / totalLabs * 100) : 0.0;
 
       setState(() {
         _totalLabs = totalLabs;
         _activeLabs = activeLabsCount;
         _pendingRequests = pendingRequests;
+        _expiredLabs = expiredLabs;
+        _upcomingExpirations = upcomingExpirations;
         _activeLabsPercentage = activeLabsPercentage;
+        _avgLabDuration = avgLabDuration;
+        _requestsByUser = requestsByUser;
+        _userNames = userNames;
         _isLoading = false;
       });
     } catch (e) {
@@ -90,14 +147,13 @@ class _HomeLabScreenState extends State<HomeLabScreen> {
     return Scaffold(
       backgroundColor: lightColorScheme.surfaceVariant,
       drawer: LabManagerSidebar(
-        currentIndex: _currentIndex + 2, // Adjust for sidebar index (Labs section is 4 in sidebar)
+        currentIndex: _currentIndex + 3,
         onTabChange: _onTabChange,
       ),
       body: CustomScrollView(
         slivers: [
-          // Header
           SliverAppBar(
-            expandedHeight: 160, // Reduced height for a cleaner look
+            expandedHeight: 160,
             pinned: true,
             leading: Builder(
               builder: (context) => IconButton(
@@ -129,17 +185,12 @@ class _HomeLabScreenState extends State<HomeLabScreen> {
               ),
             ),
           ),
-
-          // Content
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // Quick Actions
                 _buildQuickActionsCard(context),
                 const SizedBox(height: 20),
-
-                // Lab Status
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -163,12 +214,8 @@ class _HomeLabScreenState extends State<HomeLabScreen> {
                   ],
                 ),
                 const SizedBox(height: 20),
-
-                // Stats
                 _buildStatsCard(),
                 const SizedBox(height: 24),
-
-                // Footer
                 Center(
                   child: Text(
                     'Powered by Prologic',
@@ -176,8 +223,8 @@ class _HomeLabScreenState extends State<HomeLabScreen> {
                       fontSize: 12,
                       color: lightColorScheme.onSurface.withOpacity(0.5),
                     ),
-                  ),
-                ).animate().fadeIn(delay: 500.ms),
+                  ).animate().fadeIn(delay: 500.ms),
+                ),
               ]),
             ),
           ),
@@ -186,8 +233,8 @@ class _HomeLabScreenState extends State<HomeLabScreen> {
       bottomNavigationBar: LabManagerNavbar(
         currentIndex: _currentIndex,
         onTabChange: _onTabChange,
-        unreadMessageCount: 0, // Adjust based on your app's logic
-        unreadNotificationCount: 0, // Adjust based on your app's logic
+        unreadMessageCount: 0,
+        unreadNotificationCount: 0,
       ),
     );
   }
@@ -232,7 +279,7 @@ class _HomeLabScreenState extends State<HomeLabScreen> {
                   child: FilledButton.icon(
                     onPressed: () => _navigateToSeeAllRequests(context),
                     icon: const Icon(Icons.visibility, size: 22),
-                    label: const Text('See All Requests'),
+                    label: const Text('Show All Requests'),
                     style: FilledButton.styleFrom(
                       backgroundColor: lightColorScheme.primary,
                       foregroundColor: lightColorScheme.onPrimary,
@@ -349,9 +396,118 @@ class _HomeLabScreenState extends State<HomeLabScreen> {
                 _buildStatItem('Total Labs', '$_totalLabs', Icons.computer),
                 _buildStatItem('Active Labs', '$_activeLabs', Icons.check_circle, color: Colors.green),
                 _buildStatItem('Pending', '$_pendingRequests', Icons.hourglass_empty, color: Colors.orange),
-                _buildStatItem('Active Labs %', '${_activeLabsPercentage.toStringAsFixed(1)}%', Icons.trending_up),
+                _buildStatItem('Expired Labs', '$_expiredLabs', Icons.timer_off, color: Colors.red),
+                _buildStatItem('Upcoming Expirations', '$_upcomingExpirations', Icons.event, color: Colors.blue),
+                _buildStatItem('Avg Duration (Days)', _avgLabDuration.toStringAsFixed(1), Icons.schedule),
               ],
             ),
+            const SizedBox(height: 16),
+            Text(
+              'Requests by User',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: lightColorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 200,
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: (_requestsByUser.values.isNotEmpty
+                          ? _requestsByUser.values.reduce((a, b) => a > b ? a : b)
+                          : 1)
+                      .toDouble() +
+                      2,
+                  barTouchData: BarTouchData(
+                    enabled: true,
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final userId = _requestsByUser.keys.toList()[groupIndex];
+                        final userName = _userNames[userId] ?? 'Unknown';
+                        return BarTooltipItem(
+                          '$userName\n${rod.toY.toInt()} requests',
+                          GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          if (value.toInt() < 0 || value.toInt() >= _requestsByUser.length) {
+                            return const SizedBox.shrink();
+                          }
+                          final userId = _requestsByUser.keys.toList()[value.toInt()];
+                          final userName = _userNames[userId]?.split(' ')[0] ?? 'Unknown';
+                          return SideTitleWidget(
+                            space: 8,
+                            angle: 45 * math.pi / 180, // Rotate 45 degrees
+                            child: SizedBox(
+                              width: 50, // Constrain width to prevent overlap
+                              child: Text(
+                                userName,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  color: lightColorScheme.onSurface,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            meta: meta,
+                          );
+                        },
+                        reservedSize: 50,
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            value.toInt().toString(),
+                            style: GoogleFonts.poppins(
+                              fontSize: 10,
+                              color: lightColorScheme.onSurface,
+                            ),
+                          );
+                        },
+                        reservedSize: 40,
+                      ),
+                    ),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  gridData: const FlGridData(show: false),
+                  barGroups: _requestsByUser.entries.toList().asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final count = entry.value.value;
+                    return BarChartGroupData(
+                      x: index,
+                      barRods: [
+                        BarChartRodData(
+                          toY: count.toDouble(),
+                          color: lightColorScheme.primary,
+                          width: 20,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ).animate().fadeIn(delay: 500.ms).slideY(begin: 0.1),
           ],
         ),
       ),

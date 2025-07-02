@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:pte_mobile/widgets/engineer_sidebar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:quickalert/quickalert.dart';
 import 'package:pte_mobile/services/virtualization_env_service.dart';
 import '../../models/virtualization_env.dart';
+import 'package:pte_mobile/widgets/assistant_sidebar.dart';
+import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
 
 class RequestsByUserId extends StatefulWidget {
   const RequestsByUserId({Key? key}) : super(key: key);
@@ -18,22 +21,34 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
   List<VirtualizationEnv> _filteredRequests = [];
   bool _isLoading = true;
   String? _userId;
-  String? _lastError;
   String _searchQuery = '';
   int _currentPage = 1;
   final int _itemsPerPage = 3;
   int _totalPages = 1;
+  String? _currentUserRole;
+
+  // Method to add local creation time to requests
+  VirtualizationEnv _withLocalCreationTime(VirtualizationEnv request) {
+    return request.copyWith(localCreationTime: DateTime.now());
+  }
 
   @override
   void initState() {
     super.initState();
+    _fetchCurrentUserRole();
     _loadUserIdAndRequests();
+  }
+
+  Future<void> _fetchCurrentUserRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserRole = prefs.getString('userRole') ?? 'Unknown Role';
+    });
   }
 
   Future<void> _loadUserIdAndRequests() async {
     setState(() {
       _isLoading = true;
-      _lastError = null;
     });
 
     try {
@@ -41,40 +56,43 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
       _userId = prefs.getString('userId');
 
       if (_userId == null) {
+        debugPrint('No user ID found. Please log in again.');
         setState(() {
           _isLoading = false;
-          _lastError = 'No user ID found. Please log in again.';
+          _requests = [];
+          _filteredRequests = [];
+          _totalPages = 1;
         });
         return;
       }
 
       final requests = await _service.getUserLabEnvs(_userId!);
+      // Add local creation time when requests are loaded
+      final requestsWithCreationTime = requests.map(_withLocalCreationTime).toList();
+      // Sort by localCreationTime (most recent first)
+      requestsWithCreationTime.sort((a, b) => b.localCreationTime!.compareTo(a.localCreationTime!));
       
       setState(() {
-        _requests = requests;
-        _filteredRequests = requests;
+        _requests = requestsWithCreationTime;
+        _filteredRequests = List.from(requestsWithCreationTime);
         _totalPages = (_filteredRequests.length / _itemsPerPage).ceil();
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('Error fetching requests: $e');
       setState(() {
         _isLoading = false;
-        _lastError = e.toString();
+        _requests = [];
+        _filteredRequests = [];
+        _totalPages = 1;
       });
-
-      QuickAlert.show(
-        context: context,
-        type: QuickAlertType.error,
-        title: 'Load Error',
-        text: 'Failed to fetch requests: ${e.toString()}',
-      );
     }
   }
 
   void _filterRequests() {
     setState(() {
       if (_searchQuery.isEmpty) {
-        _filteredRequests = _requests;
+        _filteredRequests = List.from(_requests);
       } else {
         _filteredRequests = _requests.where((request) {
           return request.type.toLowerCase().contains(_searchQuery.toLowerCase()) ||
@@ -83,6 +101,8 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
               request.goals.toLowerCase().contains(_searchQuery.toLowerCase());
         }).toList();
       }
+      // Sort by localCreationTime after filtering to maintain recent-first order
+      _filteredRequests.sort((a, b) => b.localCreationTime!.compareTo(a.localCreationTime!));
       _totalPages = (_filteredRequests.length / _itemsPerPage).ceil();
       _currentPage = 1;
     });
@@ -101,17 +121,58 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
   Widget build(BuildContext context) {
     final paginatedRequests = _getPaginatedRequests();
 
+    // Determine the correct index based on the role
+    int currentIndex = 0;
+    switch (_currentUserRole) {
+      case 'ADMIN':
+        currentIndex = 11;
+        break;
+      case 'ENGINEER':
+        currentIndex = 5;
+        break;
+      case 'LAB-MANAGER':
+        currentIndex = 6;
+        break;
+      case 'ASSISTANT':
+        currentIndex = 0;
+        break;
+      default:
+        currentIndex = 0;
+    }
+
     return Scaffold(
+      drawer: _currentUserRole == 'ADMIN'
+          ? AdminSidebar(
+              currentIndex: currentIndex,
+              onTabChange: (index) {
+                setState(() {});
+              },
+            )
+          : _currentUserRole == 'LAB-MANAGER'
+              ? LabManagerSidebar(
+                  currentIndex: currentIndex,
+                  onTabChange: (index) {
+                    setState(() {});
+                  },
+                )
+              : _currentUserRole == 'ENGINEER'
+                  ? EngineerSidebar(
+                      currentIndex: currentIndex,
+                      onTabChange: (index) {
+                        setState(() {});
+                      },
+                    )
+                  : AssistantSidebar(
+                      currentIndex: currentIndex,
+                      onTabChange: (index) {
+                        setState(() {});
+                      },
+                    ),
       backgroundColor: Theme.of(context).colorScheme.background,
       body: Column(
         children: [
-          // Header
           _buildHeader(context),
-          
-          // Search bar
           _buildSearchBar(context),
-          
-          // Content
           Expanded(
             child: _isLoading
                 ? _buildSkeletonLoader()
@@ -155,7 +216,7 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
         gradient: LinearGradient(
           colors: [
             Theme.of(context).colorScheme.primary,
-            Theme.of(context).colorScheme.primary,
+            Theme.of(context).colorScheme.primary.withOpacity(0.9),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -169,15 +230,18 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
             color: Colors.black.withOpacity(0.1),
             blurRadius: 12,
             offset: const Offset(0, 4),
-      )],
+          ),
+        ],
       ),
       child: Column(
         children: [
           Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left, color: Colors.white, size: 28),
-                onPressed: () => Navigator.pop(context),
+              Builder(
+                builder: (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
               ),
               const Spacer(),
               const Text(
@@ -297,30 +361,33 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                ...List.generate(5, (i) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 16,
-                        height: 16,
-                        decoration: const BoxDecoration(
-                          color: Colors.grey,
-                          shape: BoxShape.circle,
+                ...List.generate(
+                  5,
+                  (i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 16,
+                          height: 16,
+                          decoration: const BoxDecoration(
+                            color: Colors.grey,
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        width: MediaQuery.of(context).size.width * 0.6,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(4),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: MediaQuery.of(context).size.width * 0.6,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                )),
+                ),
               ],
             ),
           ),
@@ -359,7 +426,7 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: _currentPage == pageNumber 
+                    color: _currentPage == pageNumber
                         ? Theme.of(context).colorScheme.primary
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(18),
@@ -368,11 +435,11 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
                   child: Text(
                     '$pageNumber',
                     style: TextStyle(
-                      color: _currentPage == pageNumber 
-                          ? Colors.white 
+                      color: _currentPage == pageNumber
+                          ? Colors.white
                           : Colors.grey[700],
-                      fontWeight: _currentPage == pageNumber 
-                          ? FontWeight.bold 
+                      fontWeight: _currentPage == pageNumber
+                          ? FontWeight.bold
                           : FontWeight.normal,
                     ),
                   ),
@@ -429,20 +496,6 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
               textAlign: TextAlign.center,
             ),
           ),
-          if (_lastError != null) ...[
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                _lastError!,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () => Navigator.pushNamed(context, '/settings'),
@@ -478,7 +531,6 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
           onTap: () => _showRequestDetails(request),
           child: Row(
             children: [
-              // Status indicator strip on the left
               Container(
                 width: 6,
                 height: 120,
@@ -501,7 +553,7 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
                         children: [
                           Flexible(
                             child: Text(
-                              request.type,
+                              request.code,
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -528,7 +580,7 @@ class _RequestsByUserIdState extends State<RequestsByUserId> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      _buildInfoRow(Icons.qr_code, 'Code', request.code),
+                      _buildInfoRow(Icons.qr_code, 'Type', request.type),
                       _buildInfoRow(Icons.memory, 'Processor', '${request.processor} Cores'),
                       _buildInfoRow(Icons.hardware, 'RAM', '${request.ram} GB'),
                       _buildInfoRow(Icons.storage, 'Disk', '${request.disk} GB'),

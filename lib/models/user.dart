@@ -16,7 +16,7 @@ class User {
   final String? bio;
   final DateTime? birthDate;
   final String? address;
-  final String? department;
+  final String? departement;
   final bool? drivingLicense;
   final String? gender;
   final String isEnabled;
@@ -43,7 +43,7 @@ class User {
     this.bio,
     this.birthDate,
     this.address,
-    this.department,
+    this.departement,
     this.drivingLicense,
     this.gender,
     required this.isEnabled,
@@ -109,7 +109,7 @@ class User {
         bio: _parseString(json['bio']),
         birthDate: _parseDate(json['birthDate']),
         address: _parseString(json['address']),
-        department: _parseString(json['departement'] ?? json['department']),
+        departement: _parseString(json['departement'] ?? json['departement']),
         drivingLicense: _parseBool(json['drivingLisence'] ?? json['drivingLicense']),
         gender: _parseString(json['gender']),
         isEnabled: _parseString(json['isEnabled']) ?? 'Inactive',
@@ -145,7 +145,7 @@ class User {
       'bio': bio,
       'birthDate': birthDate?.toIso8601String(),
       'address': address,
-      'department': department,
+      'departement': departement,
       'drivingLicense': drivingLicense,
       'gender': gender,
       'isEnabled': isEnabled,
@@ -174,7 +174,7 @@ class User {
     String? bio,
     DateTime? birthDate,
     String? address,
-    String? department,
+    String? departement,
     bool? drivingLicense,
     String? gender,
     String? isEnabled,
@@ -201,7 +201,7 @@ class User {
       bio: bio ?? this.bio,
       birthDate: birthDate ?? this.birthDate,
       address: address ?? this.address,
-      department: department ?? this.department,
+      departement: departement ?? this.departement,
       drivingLicense: drivingLicense ?? this.drivingLicense,
       gender: gender ?? this.gender,
       isEnabled: isEnabled ?? this.isEnabled,

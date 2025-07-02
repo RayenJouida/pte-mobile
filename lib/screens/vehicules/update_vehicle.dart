@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:pte_mobile/models/vehicle.dart';
 import 'package:pte_mobile/services/vehicle_service.dart';
-import 'package:pte_mobile/screens/vehicules/all_vehicles.dart'; // Import the AllVehiclesScreen
-import 'package:flutter_animate/flutter_animate.dart'; // For animations
+import 'package:pte_mobile/screens/vehicules/all_vehicles.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class UpdateVehicleScreen extends StatefulWidget {
   final Vehicle vehicle;
 
-  UpdateVehicleScreen({required this.vehicle});
+  const UpdateVehicleScreen({Key? key, required this.vehicle}) : super(key: key);
 
   @override
   _UpdateVehicleScreenState createState() => _UpdateVehicleScreenState();
@@ -31,26 +31,31 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
 
   Future<void> _updateVehicle() async {
     if (_formKey.currentState!.validate()) {
+      if (widget.vehicle.id == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vehicle ID is missing. Cannot update vehicle.')),
+        );
+        return;
+      }
+
       final updatedVehicle = Vehicle(
         id: widget.vehicle.id,
         model: _modelController.text,
         registrationNumber: _registrationController.text,
         type: _typeController.text,
+        userId: widget.vehicle.userId,
+        log: widget.vehicle.log,
+        kmTotal: widget.vehicle.kmTotal,
+        available: widget.vehicle.available,
       );
 
       try {
-        await _vehicleService.updateVehicle(updatedVehicle);
-
-        // Show Sweet Alert
+        await _vehicleService.updateVehicle(widget.vehicle.id!, updatedVehicle);
         _showSuccessDialog(context);
-
-        // Redirect to AllVehiclesScreen after a delay
-        Future.delayed(Duration(seconds: 2), () {
+        Future.delayed(const Duration(seconds: 2), () {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(
-              builder: (context) => AllVehiclesScreen(),
-            ),
+            MaterialPageRoute(builder: (context) => AllVehiclesScreen()),
           );
         });
       } catch (e) {
@@ -61,10 +66,10 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
     }
   }
 
-  // Sweet Alert Dialog
   void _showSuccessDialog(BuildContext context) {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
@@ -73,13 +78,13 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            const Icon(
               Icons.check_circle,
               color: Colors.green,
               size: 60,
             ),
-            SizedBox(height: 16),
-            Text(
+            const SizedBox(height: 16),
+            const Text(
               'Vehicle Updated Successfully!',
               style: TextStyle(
                 fontSize: 18,
@@ -95,61 +100,85 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
   }
 
   @override
+  void dispose() {
+    _modelController.dispose();
+    _registrationController.dispose();
+    _typeController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFF5F5F5), // Light gray background
+      backgroundColor: const Color(0xFFF5F5F5),
       body: Column(
         children: [
-          // Custom Header
           Container(
             height: MediaQuery.of(context).size.height * 0.2,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: Color(0xFF0632A1),
               borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(40),
                 bottomRight: Radius.circular(40),
               ),
             ),
-            child: Center(
-              child: Text(
-                'Update Vehicle',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AllVehiclesScreen(),
+                        ),
+                      );
+                    },
+                    tooltip: 'Back to All Vehicles',
+                  ),
+                  Text(
+                    'Update Vehicle',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                  SizedBox(width: 48), // Spacer for balance
+                ],
+              ),
             ),
           ),
-
-          // Floating Action Cards (Horizontal Scroll)
           Expanded(
             child: SingleChildScrollView(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               child: Form(
                 key: _formKey,
                 child: Column(
                   children: [
-                    // Horizontal Scroll for Input Fields
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
-                          // Model Card
                           _buildFloatingCard(
                             controller: _modelController,
                             label: 'Model',
                             icon: Icons.directions_car,
                             validator: (value) {
-                              if (value == null || value.isEmpty) {
+                              if ( value == null || value.isEmpty) {
                                 return 'Please enter the model';
                               }
                               return null;
                             },
                           ).animate().fadeIn(duration: 500.ms).slideX(delay: 300.ms),
-                          SizedBox(width: 16),
-
-                          // Registration Number Card
+                          const SizedBox(width: 16),
                           _buildFloatingCard(
                             controller: _registrationController,
                             label: 'Registration Number',
@@ -161,9 +190,7 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
                               return null;
                             },
                           ).animate().fadeIn(duration: 500.ms).slideX(delay: 400.ms),
-                          SizedBox(width: 16),
-
-                          // Type Card
+                          const SizedBox(width: 16),
                           _buildFloatingCard(
                             controller: _typeController,
                             label: 'Type',
@@ -178,25 +205,23 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
                         ],
                       ),
                     ),
-                    SizedBox(height: 40),
-
-                    // Update Button
+                    const SizedBox(height: 40),
                     Container(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: _updateVehicle,
-                        child: Text(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0632A1),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
                           'Update Vehicle',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.white,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF0632A1),
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                       ),
@@ -211,7 +236,6 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
     );
   }
 
-  // Floating Card Widget
   Widget _buildFloatingCard({
     required TextEditingController controller,
     required String label,
@@ -219,7 +243,7 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
     required String? Function(String?) validator,
   }) {
     return Container(
-      width: 200, // Fixed width for each card
+      width: 200,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -232,24 +256,24 @@ class _UpdateVehicleScreenState extends State<UpdateVehicleScreen> {
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: Color(0xFF0632A1), size: 30),
-            SizedBox(height: 16),
+            Icon(icon, color: const Color(0xFF0632A1), size: 30),
+            const SizedBox(height: 16),
             Text(
               label,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 color: Colors.grey,
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             TextFormField(
               controller: controller,
-              style: TextStyle(color: Colors.black87),
-              decoration: InputDecoration(
+              style: const TextStyle(color: Colors.black87),
+              decoration: const InputDecoration(
                 border: InputBorder.none,
               ),
               validator: validator,

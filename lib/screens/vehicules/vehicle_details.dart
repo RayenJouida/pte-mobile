@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:pte_mobile/models/vehicle.dart';
 import 'package:pte_mobile/screens/vehicules/update_vehicle.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // For animations
+import 'package:pte_mobile/screens/vehicules/all_vehicles.dart'; // Import AllVehiclesScreen
+import 'package:flutter_animate/flutter_animate.dart';
 
 class VehicleDetailsScreen extends StatelessWidget {
   final Vehicle vehicle;
@@ -13,7 +14,6 @@ class VehicleDetailsScreen extends StatelessWidget {
     return Scaffold(
       body: Column(
         children: [
-          // App Bar Section
           Container(
             height: MediaQuery.of(context).size.height * 0.2,
             decoration: BoxDecoration(
@@ -23,50 +23,64 @@ class VehicleDetailsScreen extends StatelessWidget {
                 bottomRight: Radius.circular(30),
               ),
             ),
-            child: Center(
-              child: Text(
-                'Vehicle Details',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AllVehiclesScreen(),
+                        ),
+                      );
+                    },
+                    tooltip: 'Back to All Vehicles',
+                  ),
+                  Text(
+                    'Vehicle Details',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(delay: 200.ms),
+                  SizedBox(width: 48), // Spacer for balance
+                ],
+              ),
             ),
           ),
-
-          // Details Section
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Model Card
                   _buildDetailCard(
                     icon: Icons.directions_car,
                     label: 'Model',
                     value: vehicle.model ?? 'N/A',
                   ).animate().fadeIn(duration: 500.ms).slideY(delay: 300.ms),
                   SizedBox(height: 16),
-
-                  // Registration Number Card
                   _buildDetailCard(
                     icon: Icons.confirmation_number,
                     label: 'Registration Number',
                     value: vehicle.registrationNumber ?? 'N/A',
                   ).animate().fadeIn(duration: 500.ms).slideY(delay: 400.ms),
                   SizedBox(height: 16),
-
-                  // Type Card
                   _buildDetailCard(
                     icon: Icons.category,
                     label: 'Type',
                     value: vehicle.type ?? 'N/A',
                   ).animate().fadeIn(duration: 500.ms).slideY(delay: 500.ms),
                   SizedBox(height: 24),
-
-                  // Update Button
                   Container(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -103,7 +117,6 @@ class VehicleDetailsScreen extends StatelessWidget {
     );
   }
 
-  // Card Widget for Details
   Widget _buildDetailCard({required IconData icon, required String label, required String value}) {
     return Container(
       decoration: BoxDecoration(

@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:pte_mobile/config/env.dart';
 import 'package:pte_mobile/models/leave.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,15 +15,18 @@ class LeaveService {
   }
 
   // Helper method to create headers with auth token
-  Future<Map<String, String>> _getHeaders() async {
+  Future<Map<String, String>> _getHeaders({bool isJson = false}) async {
     final token = await _getToken();
     if (token == null) {
       throw Exception('No auth token found. Please log in again.');
     }
-    return {
-      'Content-Type': 'application/json',
+    final headers = {
       'Authorization': 'Bearer $token',
     };
+    if (isJson) {
+      headers['Content-Type'] = 'application/json';
+    }
+    return headers;
   }
 
   Future<Leave> createLeaveRequest({
@@ -33,36 +38,85 @@ class LeaveService {
     String? note,
     required String applicantId,
     required String supervisorId,
+    File? certifFile, // For certificate file
   }) async {
     try {
       final url = Uri.parse('${Env.apiUrl}/leave/createLeaveRequest');
-      final headers = await _getHeaders();
 
-      final body = json.encode({
-        'fullName': fullName,
-        'email': email,
-        'startDate': startDate.toIso8601String(),
-        'endDate': endDate.toIso8601String(),
-        'type': type,
-        if (note != null) 'note': note,
-        'applicant': applicantId,
-        'supervisor': supervisorId,
-      });
+      if (certifFile != null) {
+        final headers = await _getHeaders();
+        var request = http.MultipartRequest('POST', url);
+        request.headers.addAll(headers);
+        request.fields.addAll({
+          'fullName': fullName,
+          'email': email,
+          'startDate': startDate.toIso8601String(),
+          'endDate': endDate.toIso8601String(),
+          'type': type,
+          if (note != null) 'note': note,
+          'applicant': applicantId,
+          'supervisor': supervisorId,
+        });
 
-      print('Sending leave request to: $url');
-      print('Request Headers: $headers');
-      print('Request Body: $body');
+        // Determine the MIME type based on file extension
+        String mimeType = 'application/octet-stream';
+        if (certifFile.path.endsWith('.pdf')) {
+          mimeType = 'application/pdf';
+        } else if (certifFile.path.endsWith('.doc') || certifFile.path.endsWith('.docx')) {
+          mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        }
 
-      final response = await http.post(url, headers: headers, body: body);
+        request.files.add(await http.MultipartFile.fromPath(
+          'certif',
+          certifFile.path,
+          contentType: MediaType.parse(mimeType),
+        ));
 
-      print('CreateLeaveRequest Status: ${response.statusCode}');
-      print('CreateLeaveRequest Body: ${response.body}');
+        print('Sending leave request with file to: $url');
+        print('Request Headers: $headers');
+        print('Request Fields: ${request.fields}');
 
-      if (response.statusCode == 200) {
-        final jsonResponse = json.decode(response.body);
-        return Leave.fromJson(jsonResponse);
+        final response = await request.send();
+        final responseBody = await response.stream.bytesToString();
+
+        print('CreateLeaveRequest Status: ${response.statusCode}');
+        print('CreateLeaveRequest Body: $responseBody');
+
+        if (response.statusCode == 200) {
+          final jsonResponse = json.decode(responseBody);
+          print('Successful response from createLeaveRequest: $jsonResponse'); 
+          return Leave.fromJson(jsonResponse);
+        } else {
+          throw Exception('Failed to create leave request: $responseBody');
+        }
       } else {
-        throw Exception('Failed to create leave request: ${response.body}');
+        final headers = await _getHeaders(isJson: true); // Add Content-Type: application/json
+        final body = json.encode({
+          'fullName': fullName,
+          'email': email,
+          'startDate': startDate.toIso8601String(),
+          'endDate': endDate.toIso8601String(),
+          'type': type,
+          if (note != null) 'note': note,
+          'applicant': applicantId,
+          'supervisor': supervisorId,
+        });
+
+        print('Sending leave request to: $url');
+        print('Request Headers: $headers');
+        print('Request Body: $body');
+
+        final response = await http.post(url, headers: headers, body: body);
+
+        print('CreateLeaveRequest Status: ${response.statusCode}');
+        print('CreateLeaveRequest Body: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final jsonResponse = json.decode(response.body);
+          return Leave.fromJson(jsonResponse);
+        } else {
+          throw Exception('Failed to create leave request: ${response.body}');
+        }
       }
     } catch (e) {
       print('Error creating leave request: $e');

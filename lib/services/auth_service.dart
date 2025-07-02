@@ -8,7 +8,9 @@ import '../config/env.dart';
 import '../models/user.dart';
 import 'package:mime/mime.dart';
 import 'package:http_parser/http_parser.dart';
-import '../models/activity.dart'; // Add this import
+import '../models/activity.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 class AuthService {
   Future<bool> signUp({
@@ -23,15 +25,18 @@ class AuthService {
     required String fs,
     required String bio,
     required String address,
-    required String department,
+    required String departement,
     required bool teamLeader,
     String? imagePath,
+    String? hiringDate,
+    bool? drivingLicense,
+    String? gender,
   }) async {
     try {
-     var request = http.MultipartRequest(
-  'POST',
-  Uri.parse('${Env.apiUrl}/users/signup'),
-);
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${Env.apiUrl}/users/signup'),
+      );
 
       request.fields.addAll({
         'matricule': matricule,
@@ -45,8 +50,11 @@ class AuthService {
         'fs': fs,
         'bio': bio,
         'address': address,
-        'department': department,
+        'departement': departement,
         'teamLeader': teamLeader.toString(),
+        'hiringDate': hiringDate ?? '',
+        'drivingLicense': drivingLicense?.toString() ?? 'false',
+        'gender': gender ?? '',
       });
 
       print("Request fields added: ${request.fields}");
@@ -171,8 +179,46 @@ class AuthService {
     }
   }
 
+  Future<User?> fetchUser(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('authToken');
+    if (token == null) throw Exception('Not authenticated');
+
+    try {
+      final response = await http.get(
+        Uri.parse('${Env.apiUrl}/users/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      print('Fetch user response status: ${response.statusCode}');
+      print('Fetch user response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return User.fromJson(data);
+      } else {
+        throw Exception('Failed to fetch user: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error fetching user: $e');
+      rethrow;
+    }
+  }
+
+
   Future<User?> login(String email, String password) async {
     try {
+      // Ensure Firebase is initialized
+      try {
+        await Firebase.initializeApp();
+        print('Firebase initialized in login');
+      } catch (e) {
+        print('Firebase initialization error: $e');
+      }
+
       final response = await http.post(
         Uri.parse('${Env.apiUrl}/login'),
         headers: {'Content-Type': 'application/json'},
@@ -188,8 +234,17 @@ class AuthService {
 
       if (response.statusCode == 200) {
         SharedPreferences prefs = await SharedPreferences.getInstance();
+
+        // Validate and store userId
+        final userId = responseData['id'] as String?;
+        if (userId == null || userId.isEmpty) {
+          throw Exception('Invalid or missing userId in response: ${response.body}');
+        }
+        await prefs.setString('userId', userId);
+        print('Stored userId in SharedPreferences: $userId');
+
+        // Store other user data
         await prefs.setString('authToken', responseData['token']);
-        await prefs.setString('userId', responseData['id']);
         await prefs.setString('userName', responseData['userName'] ?? 'User');
         await prefs.setString('userImage', responseData['image'] ?? '');
 
@@ -210,6 +265,35 @@ class AuthService {
           await prefs.setString('userRole', 'Unknown Role');
         }
 
+        // Attempt to save FCM token
+        try {
+          FirebaseMessaging messaging = FirebaseMessaging.instance;
+          NotificationSettings settings = await messaging.requestPermission(
+            alert: true,
+            badge: true,
+            sound: true,
+          );
+          print('Notification permission status: ${settings.authorizationStatus}');
+          if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+            String? fcmToken;
+            // Retry token retrieval with a timeout
+            try {
+              fcmToken = await messaging.getToken().timeout(Duration(seconds: 5));
+              if (fcmToken != null) {
+                await updateFcmToken(userId, fcmToken, responseData['token']);
+              } else {
+                print('FCM token is null');
+              }
+            } catch (e) {
+              print('Failed to retrieve FCM token: $e');
+            }
+          } else {
+            print('Notification permissions not granted');
+          }
+        } catch (e) {
+          print('Error handling FCM in login: $e');
+        }
+
         return User.fromJson(responseData);
       } else if (response.statusCode == 401) {
         throw Exception('Invalid credentials. Please check your email and password.');
@@ -220,7 +304,27 @@ class AuthService {
       }
     } catch (e) {
       print('Exception during login: $e');
-      throw Exception(e.toString());
+      throw Exception('Login error: $e');
+    }
+  }
+
+  Future<void> updateFcmToken(String userId, String fcmToken, String authToken) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('${Env.apiUrl}/users/$userId/fcm-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: jsonEncode({'fcmToken': fcmToken}),
+      );
+      if (response.statusCode == 200) {
+        print('FCM token updated successfully for user: $userId');
+      } else {
+        print('Failed to update FCM token: ${response.body}');
+      }
+    } catch (e) {
+      print('Error updating FCM token: $e');
     }
   }
 
@@ -245,7 +349,7 @@ class AuthService {
     };
   }
 
-Future<List<Activity>> fetchActivities() async {
+  Future<List<Activity>> fetchActivities() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? userId = prefs.getString('userId');
     String? token = prefs.getString('authToken');
@@ -276,7 +380,8 @@ Future<List<Activity>> fetchActivities() async {
     } catch (e) {
       print('Error fetching activities: $e');
       rethrow;
-    }}
+    }
+  }
 
   Future<void> markActivitiesAsRead() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -309,41 +414,41 @@ Future<List<Activity>> fetchActivities() async {
     }
   }
 
-Future<Map<String, int>> fetchUnreadCounts() async {
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  String? userId = prefs.getString('userId');
-  String? token = prefs.getString('authToken');
-  if (userId == null) throw Exception('User not logged in');
-  if (token == null) throw Exception('Not authenticated');
+  Future<Map<String, int>> fetchUnreadCounts() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? userId = prefs.getString('userId');
+    String? token = prefs.getString('authToken');
+    if (userId == null) throw Exception('User not logged in');
+    if (token == null) throw Exception('Not authenticated');
 
-  print('Fetching unread counts for user: $userId');
-  print('Using token: $token');
+    print('Fetching unread counts for user: $userId');
+    print('Using token: $token');
 
-  try {
-    final response = await http.get(
-      Uri.parse('${Env.apiUrl}/activities/unread-count/$userId'), // Fixed endpoint
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
+    try {
+      final response = await http.get(
+        Uri.parse('${Env.apiUrl}/messages/unread-count/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
 
-    print('Fetch unread counts response status: ${response.statusCode}');
-    print('Fetch unread counts response body: ${response.body}');
+      print('Fetch unread counts response status: ${response.statusCode}');
+      print('Fetch unread counts response body: ${response.body}');
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      print('Unread counts: messages=${data['unreadMessages']}, activities=${data['unreadActivities']}');
-      return {
-        'unreadMessages': data['unreadMessages'] ?? 0,
-        'unreadActivities': data['unreadActivities'] ?? 0,
-      };
-    } else {
-      throw Exception('Failed to fetch unread counts: ${response.statusCode} - ${response.body}');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('Unread counts: messages=${data['unreadCount']}, activities=${data['unreadActivities'] ?? 0}');
+        return {
+          'unreadMessages': data['unreadCount'] ?? 0,
+          'unreadActivities': data['unreadActivities'] ?? 0,
+        };
+      } else {
+        throw Exception('Failed to fetch unread counts: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error fetching unread counts: $e');
+      rethrow;
     }
-  } catch (e) {
-    print('Error fetching unread counts: $e');
-    rethrow;
   }
-}
 }

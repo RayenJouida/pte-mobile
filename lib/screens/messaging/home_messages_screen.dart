@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:pte_mobile/widgets/engineer_sidebar.dart';
 import 'package:pte_mobile/widgets/lab_manager_navbar.dart';
 import '../../services/messaging_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,7 +12,10 @@ import '../chat/chat_screen.dart';
 import '../../theme/theme.dart';
 import '../../providers/notification_provider.dart';
 import '../../config/env.dart';
-import '../settings_screen.dart'; // Import the Settings screen
+import '../settings_screen.dart';
+import 'package:pte_mobile/widgets/assistant_sidebar.dart';
+import 'package:pte_mobile/widgets/admin_sidebar.dart';
+import 'package:pte_mobile/widgets/labmanager_sidebar.dart';
 
 class HomeMessagesScreen extends StatefulWidget {
   const HomeMessagesScreen({Key? key}) : super(key: key);
@@ -31,7 +35,9 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
   String? _currentUserId;
   String? _userRole;
   String _searchText = '';
-  int _currentIndex = 1; // Index for Chat tab (not Settings)
+  int _currentIndex = 1;
+  Function(String)? _conversationListener;
+  late ScaffoldMessengerState _scaffoldMessenger;
 
   @override
   bool get wantKeepAlive => true;
@@ -40,9 +46,86 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<NotificationProvider>(context, listen: false).resetMessageCount();
+      // Removed resetMessageCount to avoid clearing unread counts
     });
     _fetchData();
+    _setupRealTimeUpdates();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessenger = ScaffoldMessenger.of(context);
+  }
+
+  void _setupRealTimeUpdates() {
+    final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
+    _conversationListener = (String recipientId) async {
+      if (_currentUserId != null) {
+        try {
+          print('Received update_conversation WebSocket message, refreshing conversations...');
+          final conversations = await _messageService.fetchConversations(_currentUserId!);
+          final users = await _messageService.fetchUsers();
+          final userList = users.map((user) => User.fromJson(user)).toList();
+          final userMap = {for (var user in userList) user.id: user};
+
+          final enhancedConversations = conversations.map((conv) {
+            final convRecipientId = conv['recipientId'];
+            final user = userMap[convRecipientId];
+            return {
+              ...conv,
+              'user': user,
+              'unreadCount': conv['unreadCount'] ?? 0,
+            };
+          }).toList();
+
+          enhancedConversations.sort((a, b) {
+            final aTimestamp = a['lastMessage'] != null
+                ? DateTime.parse(a['lastMessage']['timestamp'])
+                : DateTime(0);
+            final bTimestamp = b['lastMessage'] != null
+                ? DateTime.parse(b['lastMessage']['timestamp'])
+                : DateTime(0);
+            return bTimestamp.compareTo(aTimestamp);
+          });
+
+          if (mounted) {
+            setState(() {
+              _conversations = enhancedConversations;
+              _users = userList;
+              _filteredConversations = enhancedConversations;
+              _filteredUsers = userList;
+              _applyFilters();
+              final updatedConvIndex = _conversations.indexWhere((conv) => conv['recipientId'] == recipientId);
+              if (updatedConvIndex != -1) {
+                final conv = conversations.firstWhere((c) => c['recipientId'] == recipientId, orElse: () => {});
+                if (conv.isNotEmpty) {
+                  setState(() {
+                    _conversations[updatedConvIndex]['unreadCount'] = conv['unreadCount'] ?? 0;
+                  });
+                }
+              }
+            });
+          }
+          print('Conversations updated: ${enhancedConversations.length} conversations loaded');
+        } catch (e) {
+          print('Failed to update conversations: $e');
+          if (mounted) {
+            _scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed to update conversations: $e')));
+          }
+        }
+      }
+    };
+    notificationProvider.addConversationListener(_conversationListener!);
+  }
+
+  @override
+  void dispose() {
+    if (_conversationListener != null) {
+      Provider.of<NotificationProvider>(context, listen: false)
+          .removeConversationListener(_conversationListener!);
+    }
+    super.dispose();
   }
 
   void _onTabChange(int index) {
@@ -50,22 +133,18 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
       setState(() {
         _currentIndex = index;
       });
-      // Navigate based on the tab index
       switch (index) {
-        case 0: // Home
+        case 0:
           Navigator.pushReplacementNamed(context, '/feed');
           break;
-        case 1: // Virt Lab (for Lab Manager) or Messages (for Assistant)
+        case 1:
           if (_userRole == 'LAB-MANAGER') {
             Navigator.pushReplacementNamed(context, '/lab-home');
-          } else {
-            // Already on Messages screen, do nothing
           }
           break;
-        case 2: // Chat (Messages)
-          // Already on Messages screen, do nothing
+        case 2:
           break;
-        case 3: // Settings
+        case 3:
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const SettingsScreen()),
@@ -94,6 +173,7 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
           return {
             ...conv,
             'user': user,
+            'unreadCount': conv['unreadCount'] ?? 0,
           };
         }).toList();
 
@@ -107,17 +187,20 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
           return bTimestamp.compareTo(aTimestamp);
         });
 
-        setState(() {
-          _conversations = enhancedConversations;
-          _users = userList;
-          _filteredUsers = userList;
-          _filteredConversations = enhancedConversations;
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _conversations = enhancedConversations;
+            _users = userList;
+            _filteredUsers = userList;
+            _filteredConversations = enhancedConversations;
+            _isLoading = false;
+          });
+        }
       } catch (e) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to load data: $e')));
+        if (mounted) {
+          setState(() => _isLoading = false);
+          _scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed to load data: $e')));
+        }
       }
     }
   }
@@ -136,6 +219,7 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
           return {
             ...conv,
             'user': user,
+            'unreadCount': conv['unreadCount'] ?? 0,
           };
         }).toList();
 
@@ -149,37 +233,42 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
           return bTimestamp.compareTo(aTimestamp);
         });
 
-        setState(() {
-          _conversations = enhancedConversations;
-          _users = userList;
-          _filteredConversations = enhancedConversations;
-          _filteredUsers = userList;
-          _applyFilters();
-        });
+        if (mounted) {
+          setState(() {
+            _conversations = enhancedConversations;
+            _users = userList;
+            _filteredConversations = enhancedConversations;
+            _filteredUsers = userList;
+            _applyFilters();
+          });
+        }
       } catch (e) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to refresh conversations: $e')));
+        if (mounted) {
+          _scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed to refresh conversations: $e')));
+        }
       }
     }
   }
 
   void _applyFilters() {
     final query = _searchText.toLowerCase();
-    setState(() {
-      _filteredUsers = _users.where((user) {
-        final fullName = '${user.firstName} ${user.lastName}'.toLowerCase();
-        return fullName.contains(query);
-      }).toList();
+    if (mounted) {
+      setState(() {
+        _filteredUsers = _users.where((user) {
+          final fullName = '${user.firstName} ${user.lastName}'.toLowerCase();
+          return fullName.contains(query);
+        }).toList();
 
-      _filteredConversations = _conversations.where((conv) {
-        final user = conv['user'] as User?;
-        final fullName = '${user?.firstName} ${user?.lastName}'.toLowerCase();
-        final lastMessage = conv['lastMessage'] != null
-            ? message_model.Message.fromJson(conv['lastMessage']).content?.toLowerCase()
-            : '';
-        return fullName.contains(query) || (lastMessage?.contains(query) ?? false);
-      }).toList();
-    });
+        _filteredConversations = _conversations.where((conv) {
+          final user = conv['user'] as User?;
+          final fullName = '${user?.firstName} ${user?.lastName}'.toLowerCase();
+          final lastMessage = conv['lastMessage'] != null
+              ? message_model.Message.fromJson(conv['lastMessage']).content?.toLowerCase()
+              : '';
+          return fullName.contains(query) || (lastMessage?.contains(query) ?? false);
+        }).toList();
+      });
+    }
   }
 
   String _formatTimestamp(DateTime? timestamp) {
@@ -222,101 +311,105 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
 
     return _buildAnimatedItem(
       index: index,
-      child: InkWell(
-        onTap: () async {
-          final shouldRefresh = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => MessagingScreen(
-                recipientId: user?.id ?? '',
-                recipientName: '${user?.firstName} ${user?.lastName}',
+      child: Consumer<NotificationProvider>(
+        builder: (context, notificationProvider, child) {
+          return InkWell(
+            onTap: () async {
+              final shouldRefresh = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => MessagingScreen(
+                    recipientId: user?.id ?? '',
+                    recipientName: '${user?.firstName} ${user?.lastName}',
+                  ),
+                ),
+              );
+              if (shouldRefresh == true) _refreshConversations();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    backgroundImage: (user?.image != null && user!.image!.isNotEmpty)
+                        ? NetworkImage('${Env.userImageBaseUrl}${user!.image!}')
+                        : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
+                    child: user?.image == null || user!.image!.isEmpty
+                        ? Text(
+                            user?.firstName[0].toUpperCase() ?? '?',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${user?.firstName ?? ''} ${user?.lastName ?? ''}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          lastMessage != null
+                              ? (isSentByMe
+                                  ? 'You: ${lastMessage.content}'
+                                  : lastMessage.content!)
+                              : 'No messages yet',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        _formatTimestamp(lastMessage?.timestamp),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                        ),
+                      ),
+                      if (unreadCount > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$unreadCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
             ),
           );
-          if (shouldRefresh == true) _refreshConversations();
         },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                backgroundImage: (user?.image != null && user!.image!.isNotEmpty)
-                    ? NetworkImage('${Env.userImageBaseUrl}${user!.image!}')
-                    : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
-                child: user?.image == null || user!.image!.isEmpty
-                    ? Text(
-                        user?.firstName[0].toUpperCase() ?? '?',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${user?.firstName ?? ''} ${user?.lastName ?? ''}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      lastMessage != null
-                          ? (isSentByMe
-                              ? 'You: ${lastMessage.content}'
-                              : lastMessage.content!)
-                          : 'No messages yet',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Row(
-                children: [
-                  Text(
-                    _formatTimestamp(lastMessage?.timestamp),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                    ),
-                  ),
-                  if (unreadCount > 0) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        '$unreadCount',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -381,27 +474,23 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.background,
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.background,
+        backgroundColor: Colors.white,
         elevation: 0,
-        toolbarHeight: 70,
-        leadingWidth: 120,
-        leading: Center(
-          child: Image.asset(
-            'assets/images/prologic.png',
-            width: 180,
-            height: 50,
-            fit: BoxFit.contain,
+        toolbarHeight: 60,
+        leadingWidth: 40,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Icon(Icons.menu, color: lightColorScheme.primary, size: 24),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+            padding: EdgeInsets.zero,
           ),
         ),
-        title: Text(
-          'Messages',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 24,
-            color: Theme.of(context).colorScheme.primary,
-          ),
+        title: Image.asset(
+          'assets/images/prologic.png',
+          height: 36,
+          fit: BoxFit.contain,
         ),
-        centerTitle: true,
+        centerTitle: false,
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -431,15 +520,33 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
           preferredSize: const Size.fromHeight(1),
           child: Container(
             height: 1,
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+            color: Colors.grey.shade200,
           ),
         ),
       ),
+drawer: _userRole == 'ADMIN'
+    ? AdminSidebar(
+        currentIndex: _currentIndex,
+        onTabChange: _onTabChange,
+      )
+    : _userRole == 'LAB-MANAGER'
+        ? LabManagerSidebar(
+            currentIndex: _currentIndex,
+            onTabChange: _onTabChange,
+          )
+        : _userRole == 'ENGINEER'
+            ? EngineerSidebar(
+                currentIndex: _currentIndex,
+                onTabChange: _onTabChange,
+              )
+            : AssistantSidebar(
+                currentIndex: _currentIndex,
+                onTabChange: _onTabChange,
+              ), 
       body: RefreshIndicator(
         onRefresh: _refreshConversations,
         child: Column(
           children: [
-            // Search Bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: TextField(
@@ -469,7 +576,6 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
                   ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
                   : ListView(
                       children: [
-                        // Contacts Section
                         if (_filteredUsers.isNotEmpty) ...[
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -491,7 +597,6 @@ class _HomeMessagesScreenState extends State<HomeMessagesScreen>
                             ),
                           ),
                         ],
-                        // Chats Section
                         if (_filteredConversations.isNotEmpty) ...[
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -21,8 +21,8 @@ import 'package:pte_mobile/screens/leave/leave_request_screen.dart';
 import 'package:pte_mobile/screens/leave/my_leave_requests_screen.dart';
 import 'package:pte_mobile/screens/leave/all_leave_requests.dart';
 import 'package:pte_mobile/screens/leave/leave_dashboard.dart';
-import 'package:pte_mobile/screens/feed/manage_posts_screen.dart'; // Added import
-import 'package:pte_mobile/screens/feed/posts_dashboard_screen.dart'; // Added import
+import 'package:pte_mobile/screens/feed/manage_posts_screen.dart';
+import 'package:pte_mobile/screens/feed/posts_dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/env.dart';
 
@@ -43,10 +43,9 @@ class AdminSidebar extends StatefulWidget {
 class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderStateMixin {
   bool _isUsersExpanded = false;
   bool _isRoomsExpanded = false;
-  bool _isPostsExpanded = false; // New expansion state for Posts
+  bool _isPostsExpanded = false;
   bool _isLabsExpanded = false;
   bool _isLeaveExpanded = false;
-  bool _isProfileExpanded = false;
   late AnimationController _animationController;
 
   final Color primaryBlue = const Color(0xFF2563EB);
@@ -61,8 +60,6 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-
-    // Adjust index ranges for expanded sections
     if (widget.currentIndex >= 0 && widget.currentIndex <= 2) {
       _isUsersExpanded = true;
     } else if (widget.currentIndex >= 3 && widget.currentIndex <= 6) {
@@ -73,8 +70,6 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
       _isLabsExpanded = true;
     } else if (widget.currentIndex >= 13 && widget.currentIndex <= 16) {
       _isLeaveExpanded = true;
-    } else if (widget.currentIndex >= 17 && widget.currentIndex <= 18) {
-      _isProfileExpanded = true;
     }
   }
 
@@ -88,7 +83,6 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
         _isPostsExpanded = widget.currentIndex >= 7 && widget.currentIndex <= 9;
         _isLabsExpanded = widget.currentIndex >= 10 && widget.currentIndex <= 12;
         _isLeaveExpanded = widget.currentIndex >= 13 && widget.currentIndex <= 16;
-        _isProfileExpanded = widget.currentIndex >= 17 && widget.currentIndex <= 18;
       });
     }
   }
@@ -100,7 +94,7 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
   }
 
   Future<void> _navigateToPage(BuildContext context, Widget page, int index) async {
-    Navigator.pop(context); // Close the drawer
+    Navigator.pop(context);
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => page),
@@ -110,7 +104,15 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
     }
   }
 
-  Future<void> _navigateToEditProfile(BuildContext context, int index) async {
+  Future<void> _navigateToProfile(BuildContext context) async {
+    Navigator.pop(context);
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ProfileScreen()),
+    );
+  }
+
+  Future<void> _navigateToEditProfile(BuildContext context) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('userId');
@@ -120,10 +122,13 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
         );
         return;
       }
-
       final userData = await _userService.getUserById(userId);
       final user = User.fromJson(userData);
-      await _navigateToPage(context, EditProfileScreen(user: user), index);
+      Navigator.pop(context);
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => EditProfileScreen(user: user)),
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to load user data: $e')),
@@ -135,6 +140,22 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     Navigator.pushReplacementNamed(context, '/login');
+  }
+
+  Future<int> _getReserveRoomIndex(String? role) async {
+    final prefs = await SharedPreferences.getInstance();
+    role = role ?? prefs.getString('userRole') ?? 'ASSISTANT';
+    switch (role.toUpperCase()) {
+      case 'ADMIN':
+        return 4;
+      case 'ENGINEER':
+        return 3;
+      case 'LAB-MANAGER':
+        return 2;
+      case 'ASSISTANT':
+      default:
+        return 4;
+    }
   }
 
   @override
@@ -174,42 +195,38 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                           _isPostsExpanded = false;
                           _isLabsExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.user,
-                          title: 'See Users',
+                          title: 'Show Users',
                           isSelected: widget.currentIndex == 0,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const AllUsersScreen(),
-                            0,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(0);
+                            _navigateToPage(context, const AllUsersScreen(), 0);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.calendarCheck,
                           title: 'Book a Technician',
                           isSelected: widget.currentIndex == 1,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const UserReservationScreen(),
-                            1,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(1);
+                            _navigateToPage(context, const UserReservationScreen(), 1);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.barChart,
                           title: 'Users Dashboard',
                           isSelected: widget.currentIndex == 2,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const UserDashboardScreen(),
-                            2,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(2);
+                            _navigateToPage(context, UserDashboardScreen(currentIndex: 2), 2);
+                          },
                         ),
                       ],
                     ),
@@ -226,56 +243,56 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                           _isPostsExpanded = false;
                           _isLabsExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.calendar,
-                          title: 'See Calendar',
+                          title: 'Show Calendar',
                           isSelected: widget.currentIndex == 3,
-                          onTap: () => _navigateToPage(
-                            context,
-                            RoomReservationCalendarScreen(),
-                            3,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(3);
+                            _navigateToPage(context, RoomReservationCalendarScreen(currentIndex: 3), 3);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.book,
                           title: 'Reserve Room',
                           isSelected: widget.currentIndex == 4,
-                          onTap: () => _navigateToPage(
-                            context,
-                            RoomReservationScreen(
-                              onEventCreated: (event) {},
-                              events: [],
-                            ),
-                            4,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(4);
+                            _navigateToPage(
+                              context,
+                              RoomReservationScreen(
+                                currentIndex: 4,
+                                onEventCreated: (event) {},
+                                events: [],
+                              ),
+                              4,
+                            );
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.cog,
                           title: 'Manage Rooms',
                           isSelected: widget.currentIndex == 5,
-                          onTap: () => _navigateToPage(
-                            context,
-                            AllRoomsScreen(),
-                            5,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(5);
+                            _navigateToPage(context, AllRoomsScreen(currentIndex: 5), 5);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.barChart,
                           title: 'Rooms Dashboard',
                           isSelected: widget.currentIndex == 6,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const RoomsDashboardScreen(),
-                            6,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(6);
+                            _navigateToPage(context, RoomsDashboardScreen(currentIndex: 6), 6);
+                          },
                         ),
                       ],
                     ),
@@ -292,42 +309,38 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                           _isRoomsExpanded = false;
                           _isLabsExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.eye,
-                          title: 'See all Posts',
+                          title: 'Show All Posts',
                           isSelected: widget.currentIndex == 7,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const AllPostsScreen(),
-                            7,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(7);
+                            _navigateToPage(context, const AllPostsScreen(), 7);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.cog,
                           title: 'Manage Posts',
                           isSelected: widget.currentIndex == 8,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const ManagePostsScreen(),
-                            8,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(8);
+                            _navigateToPage(context, const ManagePostsScreen(), 8);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.barChart,
                           title: 'Posts Dashboard',
                           isSelected: widget.currentIndex == 9,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const PostsDashboardScreen(),
-                            9,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(9);
+                            _navigateToPage(context, const PostsDashboardScreen(), 9);
+                          },
                         ),
                       ],
                     ),
@@ -344,7 +357,6 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                           _isRoomsExpanded = false;
                           _isPostsExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
@@ -353,33 +365,30 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                           icon: LineIcons.plusCircle,
                           title: 'Request Lab',
                           isSelected: widget.currentIndex == 10,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const RequestLabScreen(),
-                            10,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(10);
+                            _navigateToPage(context, const RequestLabScreen(), 10);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.list,
                           title: 'Check My Requests',
                           isSelected: widget.currentIndex == 11,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const RequestsByUserId(),
-                            11,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(11);
+                            _navigateToPage(context, const RequestsByUserId(), 11);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.eye,
-                          title: 'See all requests',
+                          title: 'All Labs Requests',
                           isSelected: widget.currentIndex == 12,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const LabRequestsScreen(),
-                            12,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(12);
+                            _navigateToPage(context, const LabRequestsScreen(), 12);
+                          },
                         ),
                       ],
                     ),
@@ -396,7 +405,6 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                           _isRoomsExpanded = false;
                           _isPostsExpanded = false;
                           _isLabsExpanded = false;
-                          _isProfileExpanded = false;
                         }
                       }),
                       children: [
@@ -405,81 +413,40 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                           icon: LineIcons.plusCircle,
                           title: 'Leave Request',
                           isSelected: widget.currentIndex == 13,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const LeaveRequestScreen(),
-                            13,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(13);
+                            _navigateToPage(context, LeaveRequestScreen(currentIndex: 13), 13);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.list,
                           title: 'My Leave Requests',
                           isSelected: widget.currentIndex == 14,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const MyLeaveRequestsScreen(),
-                            14,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(14);
+                            _navigateToPage(context, const MyLeaveRequestsScreen(), 14);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.list,
                           title: 'All Leave Requests',
                           isSelected: widget.currentIndex == 15,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const AllLeaveRequestsScreen(),
-                            15,
-                          ),
+                          onTap: () {
+                            widget.onTabChange(15);
+                            _navigateToPage(context, const AllLeaveRequestsScreen(), 15);
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.barChart,
                           title: 'Leave Dashboard',
                           isSelected: widget.currentIndex == 16,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const LeaveDashboardScreen(),
-                            16,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildNavItem(
-                      context,
-                      icon: LineIcons.user,
-                      title: 'Profile',
-                      isExpanded: _isProfileExpanded,
-                      onTap: () => setState(() {
-                        _isProfileExpanded = !_isProfileExpanded;
-                        if (_isProfileExpanded) {
-                          _isUsersExpanded = false;
-                          _isRoomsExpanded = false;
-                          _isPostsExpanded = false;
-                          _isLabsExpanded = false;
-                          _isLeaveExpanded = false;
-                        }
-                      }),
-                      children: [
-                        _buildSubNavItem(
-                          context,
-                          icon: LineIcons.userCircle,
-                          title: 'See Profile',
-                          isSelected: widget.currentIndex == 17,
-                          onTap: () => _navigateToPage(
-                            context,
-                            ProfileScreen(),
-                            17,
-                          ),
-                        ),
-                        _buildSubNavItem(
-                          context,
-                          icon: LineIcons.edit,
-                          title: 'Edit Profile',
-                          isSelected: widget.currentIndex == 18,
-                          onTap: () => _navigateToEditProfile(context, 18),
+                          onTap: () {
+                            widget.onTabChange(16);
+                            _navigateToPage(context, const LeaveDashboardScreen(), 16);
+                          },
                         ),
                       ],
                     ),
@@ -497,91 +464,79 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            primaryBlue,
-            darkBlue,
-          ],
+    return GestureDetector(
+      onTap: () => _navigateToProfile(context),
+      onLongPress: () => _navigateToEditProfile(context),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [primaryBlue, darkBlue],
+          ),
         ),
-      ),
-      child: FutureBuilder<Map<String, String?>>(
-        future: _getUserInfo(),
-        builder: (context, snapshot) {
-          final userName = snapshot.data?['userName'] ?? 'Admin';
-          final userImage = snapshot.data?['userImage'];
-
-          return Column(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.8),
-                    width: 3,
+        child: FutureBuilder<Map<String, String?>>(
+          future: _getUserInfo(),
+          builder: (context, snapshot) {
+            final userName = snapshot.data?['userName'] ?? 'Admin';
+            final userImage = snapshot.data?['userImage'];
+            return Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.white.withOpacity(0.2),
-                  backgroundImage: userImage != null
-                      ? NetworkImage('${Env.userImageBaseUrl}$userImage')
-                      : null,
-                  child: userImage == null
-                      ? Icon(
-                          Icons.person,
-                          size: 40,
-                          color: Colors.white,
-                        )
-                      : null,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                userName,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  letterSpacing: 0.5,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.3),
-                    width: 1,
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundColor: Colors.white.withOpacity(0.2),
+                    backgroundImage: userImage != null
+                        ? NetworkImage('${Env.userImageBaseUrl}$userImage')
+                        : null,
+                    child: userImage == null ? Icon(Icons.person, size: 40, color: Colors.white) : null,
                   ),
                 ),
-                child: const Text(
-                  'Admin Dashboard',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                const SizedBox(height: 16),
+                Text(
+                  userName,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
                     color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+                  ),
+                  child: const Text(
+                    'Admin Dashboard',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -621,11 +576,7 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    Icon(
-                      icon,
-                      size: 26,
-                      color: isExpanded ? primaryBlue : Colors.black87,
-                    ),
+                    Icon(icon, size: 26, color: isExpanded ? primaryBlue : Colors.black87),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
@@ -640,11 +591,7 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
                     AnimatedRotation(
                       turns: isExpanded ? 0.25 : 0,
                       duration: const Duration(milliseconds: 300),
-                      child: Icon(
-                        Icons.chevron_right,
-                        size: 24,
-                        color: isExpanded ? primaryBlue : Colors.black54,
-                      ),
+                      child: Icon(Icons.chevron_right, size: 24, color: isExpanded ? primaryBlue : Colors.black54),
                     ),
                   ],
                 ),
@@ -704,11 +651,7 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
               children: [
                 Stack(
                   children: [
-                    Icon(
-                      icon,
-                      size: 22,
-                      color: isSelected ? primaryBlue : Colors.black54,
-                    ),
+                    Icon(icon, size: 22, color: isSelected ? primaryBlue : Colors.black54),
                     if (badgeCount > 0)
                       Positioned(
                         right: 0,
@@ -770,24 +713,16 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
       padding: const EdgeInsets.all(20),
       child: ElevatedButton.icon(
         onPressed: () => _logout(context),
-        icon: const Icon(
-          LineIcons.alternateSignOut,
-          size: 24,
-        ),
+        icon: const Icon(LineIcons.alternateSignOut, size: 24),
         label: const Text(
           'Log Out',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFEF4444),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 4,
           shadowColor: const Color(0xFFEF4444).withOpacity(0.4),
         ),
@@ -818,11 +753,7 @@ class _AdminSidebarState extends State<AdminSidebar> with SingleTickerProviderSt
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Icon(
-                  LineIcons.sun,
-                  size: 26,
-                  color: Colors.black87,
-                ),
+                Icon(LineIcons.sun, size: 26, color: Colors.black87),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Text(

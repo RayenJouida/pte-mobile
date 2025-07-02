@@ -1,13 +1,14 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:line_icons/line_icons.dart';
-import 'package:pte_mobile/screens/labmanager/request_lab.dart';
-import 'package:pte_mobile/screens/labmanager/requests_by_user_id.dart';
+import 'package:pte_mobile/models/user_event.dart';
+import 'package:pte_mobile/screens/dashboard_screen.dart';
+import 'package:pte_mobile/screens/leave/all_leave_requests.dart';
 import 'package:pte_mobile/screens/room/all_rooms.dart';
-import 'package:pte_mobile/screens/room/room_reservation_screen.dart';
 import 'package:pte_mobile/screens/room/room_reservation_calendar_screen.dart';
 import 'package:pte_mobile/screens/room/rooms_dashboard.dart';
 import 'package:pte_mobile/screens/users/user_reservation_screen.dart';
+import 'package:pte_mobile/screens/vehicules/vehicles_dashboard.dart';
 import 'package:pte_mobile/widgets/theme_toggle_button.dart';
 import 'package:pte_mobile/screens/profile_screen.dart';
 import 'package:pte_mobile/screens/edit_profile_screen.dart';
@@ -17,10 +18,12 @@ import 'package:pte_mobile/screens/users/all_users.dart';
 import 'package:pte_mobile/screens/users/user_dashboard.dart';
 import 'package:pte_mobile/screens/leave/leave_request_screen.dart';
 import 'package:pte_mobile/screens/leave/my_leave_requests_screen.dart';
-import 'package:pte_mobile/screens/leave/all_leave_requests.dart';
-import 'package:pte_mobile/screens/leave/leave_dashboard.dart'; // Added import
+import 'package:pte_mobile/screens/leave/leave_dashboard.dart';
+import 'package:pte_mobile/screens/resume_ranking_screen.dart';
+import 'package:pte_mobile/screens/vehicules/all_vehicles.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/env.dart';
+import '../theme/theme.dart';
 
 class AssistantSidebar extends StatefulWidget {
   final int currentIndex;
@@ -39,14 +42,12 @@ class AssistantSidebar extends StatefulWidget {
 class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerProviderStateMixin {
   bool _isUsersExpanded = false;
   bool _isRoomsExpanded = false;
-  bool _isLabsExpanded = false;
   bool _isLeaveExpanded = false;
-  bool _isProfileExpanded = false;
+  bool _isCVsExpanded = false;
+  bool _isVehiclesExpanded = false;
   late AnimationController _animationController;
-
-  final Color primaryBlue = const Color(0xFF2563EB);
-  final Color lightBlue = const Color(0xFFEFF6FF);
-  final Color darkBlue = const Color(0xFF1E40AF);
+  bool? _isTeamLeader;
+  List<UserEvent> _events = [];
   final UserService _userService = UserService();
 
   @override
@@ -56,18 +57,22 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
+    _updateExpandedStates(widget.currentIndex);
+    _loadUserData();
+    _fetchEvents();
+  }
 
-    // Adjust index ranges for expanded sections
-    if (widget.currentIndex >= 0 && widget.currentIndex <= 2) {
-      _isUsersExpanded = true;
-    } else if (widget.currentIndex >= 3 && widget.currentIndex <= 6) {
-      _isRoomsExpanded = true;
-    } else if (widget.currentIndex >= 7 && widget.currentIndex <= 8) {
-      _isLabsExpanded = true;
-    } else if (widget.currentIndex >= 9 && widget.currentIndex <= 12) { // Updated range for Leave
-      _isLeaveExpanded = true;
-    } else if (widget.currentIndex >= 13 && widget.currentIndex <= 14) { // Shifted range for Profile
-      _isProfileExpanded = true;
+  Future<void> _fetchEvents() async {
+    try {
+      final fetchedEvents = await _userService.getAllUserEvents();
+      setState(() {
+        _events = fetchedEvents;
+      });
+    } catch (e) {
+      print('Error fetching events: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load events: $e')),
+      );
     }
   }
 
@@ -75,13 +80,34 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
   void didUpdateWidget(AssistantSidebar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentIndex != widget.currentIndex) {
-      setState(() {
-        _isUsersExpanded = widget.currentIndex >= 0 && widget.currentIndex <= 2;
-        _isRoomsExpanded = widget.currentIndex >= 3 && widget.currentIndex <= 6;
-        _isLabsExpanded = widget.currentIndex >= 7 && widget.currentIndex <= 8;
-        _isLeaveExpanded = widget.currentIndex >= 9 && widget.currentIndex <= 12; // Updated range
-        _isProfileExpanded = widget.currentIndex >= 13 && widget.currentIndex <= 14; // Shifted range
-      });
+      _updateExpandedStates(widget.currentIndex);
+    }
+  }
+
+  void _updateExpandedStates(int index) {
+    setState(() {
+      _isUsersExpanded = index >= 0 && index <= 2;
+      _isRoomsExpanded = index >= 3 && index <= 5;
+      _isVehiclesExpanded = index >= 6 && index <= 8;
+      _isLeaveExpanded = index >= 9 && index <= (12 + (_isTeamLeader == true ? 1 : 0));
+      _isCVsExpanded = index >= 13 && index <= (14 + (_isTeamLeader == true ? 1 : 0));
+    });
+  }
+
+  Future<void> _loadUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('userId');
+    if (userId != null) {
+      try {
+        final userData = await _userService.getUserById(userId);
+        final user = User.fromJson(userData);
+        setState(() {
+          _isTeamLeader = user.teamLeader;
+          _updateExpandedStates(widget.currentIndex);
+        });
+      } catch (e) {
+        print('Error loading user data: $e');
+      }
     }
   }
 
@@ -92,13 +118,12 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
   }
 
   Future<void> _navigateToPage(BuildContext context, Widget page, int index) async {
+    Navigator.pop(context);
     final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => page),
     );
-    if (result is int) {
-      widget.onTabChange(result);
-    }
+    widget.onTabChange(index);
   }
 
   Future<void> _navigateToEditProfile(BuildContext context, int index) async {
@@ -111,7 +136,6 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
         );
         return;
       }
-
       final userData = await _userService.getUserById(userId);
       final user = User.fromJson(userData);
       await _navigateToPage(context, EditProfileScreen(user: user), index);
@@ -130,16 +154,18 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Drawer(
       width: 320,
       backgroundColor: Colors.transparent,
       elevation: 0,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colorScheme.surface,
           boxShadow: [
             BoxShadow(
-              color: primaryBlue.withOpacity(0.1),
+              color: colorScheme.shadow.withOpacity(0.1),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),
@@ -155,6 +181,14 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                   children: [
                     _buildNavItem(
                       context,
+                      icon: LineIcons.home,
+                      title: 'Dashboard',
+                      isExpanded: false,
+                      onTap: () => _navigateToPage(context, const DashboardScreen(), -1),
+                      children: [],
+                    ),
+                    _buildNavItem(
+                      context,
                       icon: LineIcons.users,
                       title: 'Users',
                       isExpanded: _isUsersExpanded,
@@ -162,44 +196,32 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                         _isUsersExpanded = !_isUsersExpanded;
                         if (_isUsersExpanded) {
                           _isRoomsExpanded = false;
-                          _isLabsExpanded = false;
+                          _isVehiclesExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
+                          _isCVsExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.user,
-                          title: 'See Users',
+                          title: 'Show Users',
                           isSelected: widget.currentIndex == 0,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const AllUsersScreen(),
-                            0,
-                          ),
+                          onTap: () => _navigateToPage(context, const AllUsersScreen(), 0),
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.calendarCheck,
-                          title: 'Book a Technician',
+                          title: 'Booking Schedule',
                           isSelected: widget.currentIndex == 1,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const UserReservationScreen(),
-                            1,
-                          ),
+                          onTap: () => _navigateToPage(context, const UserReservationScreen(), 1),
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.barChart,
                           title: 'Users Dashboard',
                           isSelected: widget.currentIndex == 2,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const UserDashboardScreen(),
-                            2,
-                          ),
+                          onTap: () => _navigateToPage(context, const UserDashboardScreen(), 2),
                         ),
                       ],
                     ),
@@ -213,98 +235,78 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                         _isRoomsExpanded = !_isRoomsExpanded;
                         if (_isRoomsExpanded) {
                           _isUsersExpanded = false;
-                          _isLabsExpanded = false;
+                          _isVehiclesExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
+                          _isCVsExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.calendar,
-                          title: 'See Calendar',
+                          title: 'Show Calendar',
                           isSelected: widget.currentIndex == 3,
-                          onTap: () => _navigateToPage(
-                            context,
-                            RoomReservationCalendarScreen(),
-                            3,
-                          ),
-                        ),
-                        _buildSubNavItem(
-                          context,
-                          icon: LineIcons.book,
-                          title: 'Reserve Room',
-                          isSelected: widget.currentIndex == 4,
-                          onTap: () => _navigateToPage(
-                            context,
-                            RoomReservationScreen(
-                              onEventCreated: (event) {},
-                              events: [],
-                            ),
-                            4,
-                          ),
+                          onTap: () async {
+                            widget.onTabChange(3);
+                            await _navigateToPage(
+                              context,
+                              RoomReservationCalendarScreen(currentIndex: 3),
+                              3,
+                            );
+                          },
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.cog,
                           title: 'Manage Rooms',
-                          isSelected: widget.currentIndex == 5,
-                          onTap: () => _navigateToPage(
-                            context,
-                            AllRoomsScreen(),
-                            5,
-                          ),
+                          isSelected: widget.currentIndex == 4,
+                          onTap: () => _navigateToPage(context, AllRoomsScreen(currentIndex: 4), 4),
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.barChart,
                           title: 'Rooms Dashboard',
-                          isSelected: widget.currentIndex == 6,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const RoomsDashboardScreen(),
-                            6,
-                          ),
+                          isSelected: widget.currentIndex == 5,
+                          onTap: () => _navigateToPage(context, RoomsDashboardScreen(currentIndex: 5), 5),
                         ),
                       ],
                     ),
                     const SizedBox(height: 16),
                     _buildNavItem(
                       context,
-                      icon: LineIcons.flask,
-                      title: 'Labs',
-                      isExpanded: _isLabsExpanded,
+                      icon: LineIcons.car,
+                      title: 'Vehicles',
+                      isExpanded: _isVehiclesExpanded,
                       onTap: () => setState(() {
-                        _isLabsExpanded = !_isLabsExpanded;
-                        if (_isLabsExpanded) {
+                        _isVehiclesExpanded = !_isVehiclesExpanded;
+                        if (_isVehiclesExpanded) {
                           _isUsersExpanded = false;
                           _isRoomsExpanded = false;
                           _isLeaveExpanded = false;
-                          _isProfileExpanded = false;
+                          _isCVsExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
-                          icon: LineIcons.plusCircle,
-                          title: 'Request Lab',
-                          isSelected: widget.currentIndex == 7,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const RequestLabScreen(),
-                            7,
-                          ),
+                          icon: LineIcons.calendar,
+                          title: 'Show Calendar',
+                          isSelected: widget.currentIndex == 6,
+                          onTap: () => _navigateToPage(context, const UserReservationScreen(), 6),
                         ),
                         _buildSubNavItem(
                           context,
-                          icon: LineIcons.list,
-                          title: 'Check My Requests',
+                          icon: LineIcons.cog,
+                          title: 'Manage Vehicles',
+                          isSelected: widget.currentIndex == 7,
+                          onTap: () => _navigateToPage(context, AllVehiclesScreen(), 7),
+                        ),
+                        _buildSubNavItem(
+                          context,
+                          icon: LineIcons.barChart,
+                          title: 'Vehicles Dashboard',
                           isSelected: widget.currentIndex == 8,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const RequestsByUserId(),
-                            8,
-                          ),
+                          onTap: () => _navigateToPage(context, const VehiclesDashboardScreen(currentIndex: 8), 8),
                         ),
                       ],
                     ),
@@ -319,8 +321,8 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                         if (_isLeaveExpanded) {
                           _isUsersExpanded = false;
                           _isRoomsExpanded = false;
-                          _isLabsExpanded = false;
-                          _isProfileExpanded = false;
+                          _isVehiclesExpanded = false;
+                          _isCVsExpanded = false;
                         }
                       }),
                       children: [
@@ -329,80 +331,54 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                           icon: LineIcons.plusCircle,
                           title: 'Leave Request',
                           isSelected: widget.currentIndex == 9,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const LeaveRequestScreen(),
-                            9,
-                          ),
+                          onTap: () => _navigateToPage(context, const LeaveRequestScreen(), 9),
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.list,
                           title: 'My Leave Requests',
                           isSelected: widget.currentIndex == 10,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const MyLeaveRequestsScreen(),
-                            10,
-                          ),
-                        ),
-                        _buildSubNavItem(
-                          context,
-                          icon: LineIcons.eye,
-                          title: 'All Leave Requests',
-                          isSelected: widget.currentIndex == 11,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const AllLeaveRequestsScreen(),
-                            11,
-                          ),
+                          onTap: () => _navigateToPage(context, const MyLeaveRequestsScreen(), 10),
                         ),
                         _buildSubNavItem(
                           context,
                           icon: LineIcons.barChart,
                           title: 'Leave Dashboard',
-                          isSelected: widget.currentIndex == 12,
-                          onTap: () => _navigateToPage(
-                            context,
-                            const LeaveDashboardScreen(),
-                            12,
-                          ),
+                          isSelected: widget.currentIndex == 11,
+                          onTap: () => _navigateToPage(context, const LeaveDashboardScreen(), 11),
                         ),
+                        if (_isTeamLeader == true)
+                          _buildSubNavItem(
+                            context,
+                            icon: LineIcons.userCheck,
+                            title: 'Team Leave Requests',
+                            isSelected: widget.currentIndex == 12,
+                            onTap: () => _navigateToPage(context, const AllLeaveRequestsScreen(), 12),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 16),
                     _buildNavItem(
                       context,
-                      icon: LineIcons.user,
-                      title: 'Profile',
-                      isExpanded: _isProfileExpanded,
+                      icon: LineIcons.fileAlt,
+                      title: 'CVs',
+                      isExpanded: _isCVsExpanded,
                       onTap: () => setState(() {
-                        _isProfileExpanded = !_isProfileExpanded;
-                        if (_isProfileExpanded) {
+                        _isCVsExpanded = !_isCVsExpanded;
+                        if (_isCVsExpanded) {
                           _isUsersExpanded = false;
                           _isRoomsExpanded = false;
-                          _isLabsExpanded = false;
+                          _isVehiclesExpanded = false;
                           _isLeaveExpanded = false;
                         }
                       }),
                       children: [
                         _buildSubNavItem(
                           context,
-                          icon: LineIcons.userCircle,
-                          title: 'See Profile',
-                          isSelected: widget.currentIndex == 13,
-                          onTap: () => _navigateToPage(
-                            context,
-                            ProfileScreen(),
-                            13,
-                          ),
-                        ),
-                        _buildSubNavItem(
-                          context,
-                          icon: LineIcons.edit,
-                          title: 'Edit Profile',
-                          isSelected: widget.currentIndex == 14,
-                          onTap: () => _navigateToEditProfile(context, 14),
+                          icon: LineIcons.fileUpload,
+                          title: 'Rank CVs',
+                          isSelected: widget.currentIndex == 13 + (_isTeamLeader == true ? 1 : 0),
+                          onTap: () => _navigateToPage(context, ResumeRankingScreen(), 13 + (_isTeamLeader == true ? 1 : 0)),
                         ),
                       ],
                     ),
@@ -420,64 +396,54 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
   }
 
   Widget _buildHeader(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            primaryBlue,
-            darkBlue,
-          ],
-        ),
+        color: colorScheme.primary,
       ),
       child: FutureBuilder<Map<String, String?>>(
         future: _getUserInfo(),
         builder: (context, snapshot) {
           final userName = snapshot.data?['userName'] ?? 'User';
           final userImage = snapshot.data?['userImage'];
-
           return Column(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.8),
-                    width: 3,
+              GestureDetector(
+                onTap: () => _navigateToPage(context, ProfileScreen(), 0),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: colorScheme.onPrimary, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.white.withOpacity(0.2),
-                  backgroundImage: userImage != null
-                      ? NetworkImage('${Env.userImageBaseUrl}$userImage')
-                      : null,
-                  child: userImage == null
-                      ? Icon(
-                          Icons.person,
-                          size: 40,
-                          color: Colors.white,
-                        )
-                      : null,
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundColor: colorScheme.primary,
+                    backgroundImage: userImage != null
+                        ? NetworkImage('${Env.userImageBaseUrl}$userImage')
+                        : null,
+                    child: userImage == null 
+                        ? Icon(Icons.person, size: 40, color: colorScheme.onPrimary)
+                        : null,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
               Text(
                 userName,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: colorScheme.onPrimary,
                   letterSpacing: 0.5,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -486,19 +452,16 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: colorScheme.primary.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.3),
-                    width: 1,
-                  ),
+                  border: Border.all(color: colorScheme.onPrimary.withOpacity(0.3), width: 1),
                 ),
-                child: const Text(
-                  'Your Dashboard',
+                child: Text(
+                  'Assistant Dashboard',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: Colors.white,
+                    color: colorScheme.onPrimary,
                   ),
                 ),
               ),
@@ -517,15 +480,19 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
     required VoidCallback onTap,
     required List<Widget> children,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: isExpanded ? lightBlue : Colors.transparent,
+        color: isExpanded 
+            ? colorScheme.surface
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(16),
         boxShadow: isExpanded
             ? [
                 BoxShadow(
-                  color: primaryBlue.withOpacity(0.1),
+                  color: colorScheme.shadow.withOpacity(0.05),
                   blurRadius: 10,
                   spreadRadius: 0,
                   offset: const Offset(0, 4),
@@ -544,11 +511,11 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    Icon(
-                      icon,
-                      size: 26,
-                      color: isExpanded ? primaryBlue : Colors.black87,
-                    ),
+                    Icon(icon, 
+                      size: 26, 
+                      color: isExpanded 
+                          ? colorScheme.primary 
+                          : colorScheme.onSurface.withOpacity(0.87)),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
@@ -556,7 +523,9 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: isExpanded ? primaryBlue : Colors.black87,
+                          color: isExpanded 
+                              ? colorScheme.primary 
+                              : colorScheme.onSurface.withOpacity(0.87),
                         ),
                       ),
                     ),
@@ -564,10 +533,11 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                       turns: isExpanded ? 0.25 : 0,
                       duration: const Duration(milliseconds: 300),
                       child: Icon(
-                        Icons.chevron_right,
-                        size: 24,
-                        color: isExpanded ? primaryBlue : Colors.black54,
-                      ),
+                        Icons.chevron_right, 
+                        size: 24, 
+                        color: isExpanded 
+                            ? colorScheme.primary 
+                            : colorScheme.onSurface.withOpacity(0.54)),
                     ),
                   ],
                 ),
@@ -597,16 +567,21 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
     required String title,
     required bool isSelected,
     required VoidCallback onTap,
+    List<Widget>? children,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
       margin: const EdgeInsets.only(left: 24, right: 16, bottom: 8),
       decoration: BoxDecoration(
-        color: isSelected ? Colors.white : Colors.transparent,
+        color: isSelected 
+            ? colorScheme.surface
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(14),
         boxShadow: isSelected
             ? [
                 BoxShadow(
-                  color: primaryBlue.withOpacity(0.1),
+                  color: colorScheme.shadow.withOpacity(0.03),
                   blurRadius: 8,
                   spreadRadius: 0,
                   offset: const Offset(0, 2),
@@ -624,11 +599,11 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  size: 22,
-                  color: isSelected ? primaryBlue : Colors.black54,
-                ),
+                Icon(icon, 
+                  size: 22, 
+                  color: isSelected 
+                      ? colorScheme.primary 
+                      : colorScheme.onSurface.withOpacity(0.54)),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
@@ -636,7 +611,9 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                      color: isSelected ? primaryBlue : Colors.black87,
+                      color: isSelected 
+                          ? colorScheme.primary 
+                          : colorScheme.onSurface.withOpacity(0.87),
                     ),
                   ),
                 ),
@@ -646,8 +623,19 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                     height: 8,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: primaryBlue,
+                      color: colorScheme.primary,
                     ),
+                  ),
+                if (children != null && children.isNotEmpty)
+                  AnimatedRotation(
+                    turns: isSelected ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Icon(
+                      Icons.chevron_right, 
+                      size: 24, 
+                      color: isSelected 
+                          ? colorScheme.primary 
+                          : colorScheme.onSurface.withOpacity(0.54)),
                   ),
               ],
             ),
@@ -658,31 +646,25 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
   }
 
   Widget _buildLogoutButton(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       child: ElevatedButton.icon(
         onPressed: () => _logout(context),
-        icon: const Icon(
-          LineIcons.alternateSignOut,
-          size: 24,
-        ),
+        icon: const Icon(LineIcons.alternateSignOut, size: 24),
         label: const Text(
           'Log Out',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFEF4444),
-          foregroundColor: Colors.white,
+          backgroundColor: colorScheme.error,
+          foregroundColor: colorScheme.onError,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 4,
-          shadowColor: const Color(0xFFEF4444).withOpacity(0.4),
+          shadowColor: colorScheme.error.withOpacity(0.4),
         ),
       ),
     );
@@ -697,6 +679,8 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
   }
 
   Widget _buildThemeToggle(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -712,10 +696,9 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
             child: Row(
               children: [
                 Icon(
-                  LineIcons.sun,
-                  size: 26,
-                  color: Colors.black87,
-                ),
+                  LineIcons.sun, 
+                  size: 26, 
+                  color: colorScheme.onSurface.withOpacity(0.87)),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Text(
@@ -723,7 +706,7 @@ class _AssistantSidebarState extends State<AssistantSidebar> with SingleTickerPr
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                      color: colorScheme.onSurface.withOpacity(0.87),
                     ),
                   ),
                 ),
